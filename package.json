@@ -1,0 +1,19 @@
+{
+  "name": "admob-adunit-manager",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "@googleapis/admob": "^2.5.0",
+    "consola": "^3.2.3",
+    "googleapis": "^134.0.0",
+    "open": "^10.1.0",
+    "playwright": "^1.42.1"
+  }
+}
