@@ -1,7 +1,7 @@
 import { select, multiselect, text, isCancel } from '@clack/prompts'
 import consola from 'consola'
 import { getAdmobAuthData, API, type AdFormat } from './api'
-import { entries, first } from 'xdash'
+import { entries, chain, groupBy, firstOrDefault, mapValues, flatMap, $op } from 'xdash'
 
 const admobHeaderData = await getAdmobAuthData()
 consola.info('admobHeaderData', admobHeaderData)
@@ -132,38 +132,23 @@ function stringifyAdUnitName(options: AdUnitNameParts): string {
 }
 
 
-function groupBy<T, K extends string | number | symbol>(arr: T[], key: (x: T) => K): Record<K, T[]> {
-    return arr.reduce((acc, x) => {
-        const k = key(x)
-        if (!acc[k]) {
-            acc[k] = []
-        }
-        acc[k].push(x)
-        return acc
-    }, {} as Record<K, T[]>)
-}
-
-function mapValues<T, U>(obj: Record<string, T>, fn: (x: T) => U): Record<string, U> {
-    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, fn(v)]))
-}
-
-function flatMap<T, U>(arr: T[], fn: (x: T) => U[]): U[] {
-    return arr.reduce((acc, x) => acc.concat(fn(x)), [] as U[])
-}
-function firstOrDefault<T>(arr: T[], defaultValue: T): T {
-    return arr.length > 0 ? arr[0] : defaultValue
-}
 for (const app of selectedApps) {
     const allAdUnits = await admob.getListOfAdUnits(app.appId)
     // create a map of ad units
-    const adUnitsMap =
-        mapValues(
-            groupBy(allAdUnits.filter(x => x.name.startsWith('cubeage/')), x => parseAdUnitName(x.name).placementId),
-            x => mapValues(
-                groupBy(x, x => parseAdUnitName(x.name).format),
-                x => groupBy(x, x => parseAdUnitName(x.name).ecpmFloor)
-            )
-        );
+    const adUnitsMap = chain(allAdUnits)
+        .pipe(
+            $op(groupBy)(x => parseAdUnitName(x.name).placementId)
+        )
+        .pipe(
+            $op(mapValues)(x => chain(x)
+                .pipe($op(groupBy)(x => parseAdUnitName(x.name).format))
+                .pipe($op(mapValues)(x => chain(x)
+                    .pipe($op(groupBy)(x => parseAdUnitName(x.name).ecpmFloor))
+                    .value()
+                ))
+                .value()
+            ))
+        .value()
 
     consola.info('Updating ad units for', app.name)
     for (const [placementId, formats] of entries(settings)) {
@@ -270,15 +255,32 @@ for (const app of selectedApps) {
     }
 
     // remove non-exising placement ad units
-    const placementAdUnitsToRemove = flatMap(
-        entries(adUnitsMap),
-        ([placementId, formats]) => {
+    const placementAdUnitsToRemove = chain(adUnitsMap)
+        .pipe(entries)
+        .pipe($op(flatMap)(([placementId, formats]) => {
             if (placementId in settings) {
                 return []
             }
-            return flatMap(entries(formats), ([format, ecpmFloors]) => flatMap(entries(ecpmFloors), ([ecpmFloor, adUnits]) => adUnits))
-        }
-    )
+            return chain(formats)
+                .pipe(entries)
+                .pipe($op(flatMap)(([format, ecpmFloors]) => chain(ecpmFloors)
+                    .pipe(entries)
+                    .pipe($op(flatMap)(([ecpmFloor, adUnits]) => adUnits))
+                    .value()
+                ))
+                .value()
+        }))
+        .value()
+
+    // flatMap(
+    //     entries(adUnitsMap),
+    //     ([placementId, formats]) => {
+    //         if (placementId in settings) {
+    //             return []
+    //         }
+    //         return flatMap(entries(formats), ([format, ecpmFloors]) => flatMap(entries(ecpmFloors), ([ecpmFloor, adUnits]) => adUnits))
+    //     }
+    // )
     if (placementAdUnitsToRemove.length > 0) {
         consola.info('Removing ad units', placementAdUnitsToRemove.map(x => x.name))
         try {
