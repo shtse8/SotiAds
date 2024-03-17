@@ -151,8 +151,8 @@ for (const app of selectedApps) {
         .value()
 
     consola.info('Updating ad units for', app.name)
-    for (const [placementId, formats] of entries(settings)) {
-        for (const [format, ecpmFloors] of entries(formats)) {
+    for (const [placementId, formats] of Object.entries(settings)) {
+        for (const [format, ecpmFloors] of Object.entries(formats)) {
             // get all ad units for the app and see if they match the template
             // const allAdUnits = await admobClient.accounts.adUnits.list({
             //     parent: selectedAccount.name!,
@@ -188,7 +188,7 @@ for (const app of selectedApps) {
                         }
                     }
                 } else {
-                    const name = stringifyAdUnitName({ placementId, format, ecpmFloor })
+                    const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
                     consola.info('Creating ad unit', name)
                     if (isInsufficientDataAPIQuota) {
                         consola.fail('Insufficient Data API quota')
