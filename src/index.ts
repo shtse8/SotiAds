@@ -1,7 +1,9 @@
 import { select, multiselect, text, isCancel } from '@clack/prompts'
 import consola from 'consola'
-import { getAdmobAuthData, API, type AdFormat } from './api'
+import { getAdmobAuthData, API, type AdFormat } from './admobApi'
 import { entries, chain, groupBy, firstOrDefault, mapValues, flatMap, $op } from 'xdash'
+import { $ } from 'bun'
+import open from 'open'
 
 const admobHeaderData = await getAdmobAuthData()
 consola.info('admobHeaderData', admobHeaderData)
@@ -137,17 +139,19 @@ for (const app of selectedApps) {
     // create a map of ad units
     const adUnitsMap = chain(allAdUnits)
         .pipe(
-            $op(groupBy)(x => parseAdUnitName(x.name).placementId)
-        )
-        .pipe(
+            $op(groupBy)(x => parseAdUnitName(x.name).placementId),
             $op(mapValues)(x => chain(x)
-                .pipe($op(groupBy)(x => parseAdUnitName(x.name).format))
-                .pipe($op(mapValues)(x => chain(x)
-                    .pipe($op(groupBy)(x => parseAdUnitName(x.name).ecpmFloor))
-                    .value()
-                ))
+                .pipe(
+                    $op(groupBy)(x => parseAdUnitName(x.name).format),
+                    $op(mapValues)(x => chain(x)
+                        .pipe(
+                            $op(groupBy)(x => parseAdUnitName(x.name).ecpmFloor)
+                        )
+                        .value()
+                    )
+                )
                 .value()
-            ))
+            )) // { placementId: { format: { ecpmFloor: AdUnit[] } } }
         .value()
 
     consola.info('Updating ad units for', app.name)
@@ -256,20 +260,23 @@ for (const app of selectedApps) {
 
     // remove non-exising placement ad units
     const placementAdUnitsToRemove = chain(adUnitsMap)
-        .pipe(entries)
-        .pipe($op(flatMap)(([placementId, formats]) => {
-            if (placementId in settings) {
-                return []
-            }
-            return chain(formats)
-                .pipe(entries)
-                .pipe($op(flatMap)(([format, ecpmFloors]) => chain(ecpmFloors)
-                    .pipe(entries)
-                    .pipe($op(flatMap)(([ecpmFloor, adUnits]) => adUnits))
+        .pipe(
+            entries,
+            $op(flatMap)(([placementId, formats]) => {
+                if (placementId in settings) {
+                    return []
+                }
+                return chain(formats)
+                    .pipe(
+                        entries,
+                        $op(flatMap)(([format, ecpmFloors]) => chain(ecpmFloors)
+                            .pipe(
+                                entries,
+                                $op(flatMap)(([ecpmFloor, adUnits]) => adUnits))
+                            .value()
+                        ))
                     .value()
-                ))
-                .value()
-        }))
+            }))
         .value()
 
     // flatMap(
