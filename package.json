@@ -17,9 +17,14 @@
     "@clack/prompts": "^0.7.0",
     "@googleapis/admob": "^2.5.0",
     "consola": "^3.2.3",
+    "firebase-admin": "^12.0.0",
     "googleapis": "^134.0.0",
+    "h3": "^1.11.1",
     "open": "^10.1.0",
     "playwright": "^1.42.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ufo": "^1.5.2",
     "xdash": "^0.5.6"
   }
 }

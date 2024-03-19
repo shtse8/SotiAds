@@ -1,75 +1,251 @@
 import { select, multiselect, text, isCancel } from '@clack/prompts'
+import { firebase_v1beta1, google } from 'googleapis'
 import consola from 'consola'
-import { getAdmobAuthData, API, type AdFormat } from './admobApi'
-import { entries, chain, groupBy, firstOrDefault, mapValues, flatMap, $op } from 'xdash'
-import { $ } from 'bun'
+import { getAdmobAuthData, API } from './admobApi'
+import { entries, chain, groupBy, firstOrDefault, mapValues, flatMap, $op, filter, kebabCase, camelCase } from 'xdash'
 import open from 'open'
+import { createServer } from 'http'
+import { getRemoteConfig, type RemoteConfigTemplate } from 'firebase-admin/remote-config'
+import { refreshToken, initializeApp, getApps } from 'firebase-admin/app'
+import { getQuery } from 'ufo'
+import { AppPlatform } from 'firebase-admin/project-management'
+import { createApp, createRouter } from 'h3'
+import { chromium } from 'playwright-extra'
+import stealth from 'puppeteer-extra-plugin-stealth'
+import type { AdFormat, Platform } from './base'
 
-const admobHeaderData = await getAdmobAuthData()
-consola.info('admobHeaderData', admobHeaderData)
-const admob = new API(admobHeaderData)
-
-// const oauth2Client = new google.auth.OAuth2(
-//     '907470986280-5futrsa83oj7nha93giddf2akggo2l4q.apps.googleusercontent.com',
-//     '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',
-//     'http://localhost:4848/oauth2callback'
-// )
-
-// // get token
-// const authUrl = oauth2Client.generateAuthUrl({
-//     access_type: 'offline',
-//     scope: [
-//         'https://www.googleapis.com/auth/admob.monetization',
-//         'https://www.googleapis.com/auth/admob.readonly',
-//         'https://www.googleapis.com/auth/admob.report',
-//     ]
-// })
-
-// // open url in browser
-// try {
-//     // prompt user a browser will be opened with specific url to authorize
-//     console.log('Opening browser to authorize')
-//     await open(authUrl)
-// } catch (e) {
-//     // failed to open browser automatically, log the url and prompt user to open it manually
-//     console.log('Authorize this app by visiting this url:', authUrl)
-// }
-// // prompt user to authorize
-
-// const { code } = await new Promise<{
-//     code: string,
-//     scope: string,
-// }>((resolve, reject) => {
-//     const server = createServer((req, res) => {
-//         if (req.url!.indexOf('/oauth2callback') > -1) {
-//             const qs = new URL(req.url!, 'http://localhost:4848').searchParams
-//             // close the server
-//             resolve({
-//                 ...Object.fromEntries(qs),
-//             } as any)
-//             // respone a javascript to close the window
-//             res.setHeader('Content-Type', 'text/html')
-
-//             // respond with a success message
-//             res.end('<b>Success! You can close this window now.</b>')
-//             server.close()
-//         } else {
-//             res.end('Not found')
-//         }
-//     }).listen(4848)
-// })
+const cacheFile = Bun.file('cache.json')
+const authData = await cacheFile.exists() ? await (cacheFile.json() as ReturnType<typeof getAdmobAuthData>) : await getAdmobAuthData()
+Bun.write(cacheFile, JSON.stringify(authData))
 
 
-// const { tokens } = await oauth2Client.getToken(code)
-
-// oauth2Client.setCredentials(tokens)
-
-// const admobClient = google.admob({
-//     version: 'v1beta',
-//     auth: oauth2Client
-// })
+const admob = new API(authData.admobAuthData)
 
 
+const oauth2Client = new google.auth.OAuth2(
+    '907470986280-5futrsa83oj7nha93giddf2akggo2l4q.apps.googleusercontent.com',
+    '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',
+    'http://localhost:4848/oauth2callback'
+)
+
+const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: [
+        // 'https://www.googleapis.com/auth/admob.monetization',
+        // 'https://www.googleapis.com/auth/admob.readonly',
+        // 'https://www.googleapis.com/auth/admob.report',
+        'https://www.googleapis.com/auth/firebase',
+        'https://www.googleapis.com/auth/cloud-platform',
+
+    ]
+})
+
+
+const [{ code }] = await Promise.all([
+    new Promise<{
+        code: string,
+        scope: string,
+    }>((resolve, reject) => {
+        const server = Bun.serve({
+            port: 4848,
+            fetch(req) {
+                const query = getQuery(req.url!) as { code: string, scope: string }
+                resolve(query)
+                server.stop()
+                return new Response('Success! You can close this window now.')
+            }
+        })
+    }),
+    (async () => {
+        if (authData.googleAuthData.cookies) {
+            try {
+                chromium.use(stealth())
+                const browser = await chromium.launch({ headless: true })
+                const page = await browser.newPage()
+                const context = page.context()
+                await context.addCookies(authData.googleAuthData.cookies)
+                consola.info('Going to authUrl', authUrl)
+                await page.goto(authUrl)
+                await page.waitForSelector("[data-authuser='0']")
+                consola.info('Selecting account')
+                await page.click("[data-authuser='0']")
+                await page.waitForSelector("#submit_approve_access")
+                consola.info('Approving access')
+                await page.click("#submit_approve_access")
+                await page.waitForURL(/^http:\/\/localhost:4848\/oauth2callback/, {
+                    waitUntil: 'domcontentloaded'
+                })
+                consola.success('Successfully proceeded with cookies')
+                await browser.close()
+                return
+            } catch (e) {
+                consola.warn('Failed to proceed with cookies', e)
+            }
+        }
+
+        // prompt user to authorize
+        // // open url in browser
+        try {
+            // prompt user a browser will be opened with specific url to authorize
+            console.log('Opening browser to authorize')
+            await open(authUrl)
+        } catch (e) {
+            // failed to open browser automatically, log the url and prompt user to open it manually
+            console.log('Authorize this app by visiting this url:', authUrl)
+        }
+    })()
+])
+
+console.log('code', code)
+
+// update refresh token
+type PlatformString = `${Platform}:${string}`;
+type PromiseType<T> = T extends Promise<infer R> ? R : never;
+class FirebaseManager {
+    private firebaseApp = new Map<string, ReturnType<typeof initializeApp>>()
+    private appFirebaseMap = new Map<PlatformString, ReturnType<typeof initializeApp>>()
+    private isInitialized = false
+    private access_token: string | undefined | null
+    private credential = {
+        getAccessToken: async () => {
+            return {
+                access_token: this.access_token!,
+                expires_in: Date.now() + 1000 * 60 * 60,
+            }
+        }
+    }
+    private firebase: firebase_v1beta1.Firebase | undefined;
+
+    constructor(private code: string) {
+    }
+
+
+    private useFirebaseApp(projectId: string) {
+        if (this.firebaseApp.has(projectId)) {
+            return this.firebaseApp.get(projectId)!
+        }
+        const app = initializeApp({
+            credential: this.credential,
+            projectId,
+        }, projectId)
+        this.firebaseApp.set(projectId, app)
+        return app
+    }
+
+    createPlatformString(platform: Platform, packageName: string): PlatformString {
+        return `${platform}:${packageName}` as PlatformString;
+    }
+
+    async init() {
+        if (this.isInitialized) {
+            return
+        }
+        this.isInitialized = true
+
+        const { tokens } = await oauth2Client.getToken(code)
+        this.access_token = tokens.access_token;
+
+        oauth2Client.setCredentials(tokens)
+
+        if (!tokens.refresh_token) {
+            throw new Error('No refresh token')
+        }
+
+        this.firebase = google.firebase({
+            version: 'v1beta1',
+            auth: oauth2Client,
+        })
+
+        // list all projects
+        // const projects = await firebase.projects.list()
+
+        // for (const project of projects.data.results!) {
+        //     console.log('searching in', project.projectId)
+        //     const androidAppsResponse = await firebase.projects.androidApps.list({
+        //         parent: `projects/${project.projectId}`,
+        //     })
+
+        //     if (androidAppsResponse.data.apps) {
+        //         for (const app of androidAppsResponse.data.apps) {
+        //             this.appFirebaseMap.set(this.createPlatformString('Android', app.packageName!), this.useFirebaseApp(project.projectId!, project.projectId!))
+        //         }
+        //     }
+
+        //     const iosAppsResponse = await firebase.projects.iosApps.list({
+        //         parent: `projects/${project.projectId}`,
+        //     })
+        //     if (iosAppsResponse.data.apps) {
+        //         for (const app of iosAppsResponse.data.apps) {
+        //             this.appFirebaseMap.set(this.createPlatformString('iOS', app.bundleId!), this.useFirebaseApp(project.projectId!, project.projectId!))
+        //         }
+        //     }
+        // }
+    }
+
+    // async getApp(projectId: string, platform: Platform, packageName: string) {
+    //     await this.init()
+
+    //     return this.useFirebaseApp(projectId)
+
+    //     // return this.appFirebaseMap.get(this.createPlatformString(platform, packageName))
+    // }
+
+    async updateRemoteConfig(projectId: string, updater: (template: RemoteConfigTemplate) => void) {
+        const app = this.useFirebaseApp(projectId)
+        if (!app) {
+            throw new Error('App not found')
+        }
+        const remoteConfig = getRemoteConfig(app)
+        const template = await remoteConfig.getTemplate()
+        updater(template)
+
+        await remoteConfig.publishTemplate(template)
+    }
+
+    async updateAdUnits(options: {
+        projectId: string
+        platform: Platform
+        placementId: string
+        format: AdFormat
+        ecpmFloors: Record<number, string>
+    }) {
+        const { projectId, platform, placementId, format, ecpmFloors } = options
+        await this.updateRemoteConfig(projectId, template => {
+            // create Android and iOS conditions
+            if (!template.conditions.some(x => x.name === platform)) {
+                template.conditions.push({
+                    name: platform,
+                    expression: 'device.os == \'android\'',
+                    tagColor: platform == 'Android' ? 'GREEN' : 'CYAN',
+                })
+            }
+
+            const groupKey = `ad_placement_${camelCase(placementId)}_${camelCase(format)}_adUnitID_ecpm`
+            const group = template.parameterGroups[groupKey] ??= {
+                description: 'Ad placement ${placementId} values',
+                parameters: {}
+            }
+
+            for (const [ecpm, adUnitId] of Object.entries(ecpmFloors)) {
+                const key = groupKey + '_' + (Number(ecpm) * 10000)
+                const parameter = group.parameters[key] ??= {
+                    defaultValue: {
+                        useInAppDefault: true
+                    },
+                }
+                parameter.conditionalValues ??= {}
+                parameter.conditionalValues[platform] = {
+                    value: adUnitId
+                }
+            }
+
+        })
+    }
+}
+
+
+const firebaseManager = new FirebaseManager(code)
+await firebaseManager.init()
 
 // get all accounts
 // const accounts = await admobClient.accounts.list()
@@ -87,14 +263,15 @@ const admob = new API(admobHeaderData)
 
 
 const apps = await admob.listApps()
+consola.info('apps', apps)
 
 const selectedApps = await multiselect({
     message: 'Select apps',
-    options: apps.map(x => ({
-        label: (x.name || x.appId) + ' (' + x.platform + ')' + (x.status === 'Active' ? '' : ' - ' + x.status),
+    options: apps.filter(x => x.projectId).map(x => ({
+        label: (x.name || x.appId) + ' (' + x.projectId + ' - ' + x.platform + ':' + x.packageName + ')',
         value: x,
     })),
-    initialValues: apps.filter(x => x.status === 'Active') || [],
+    initialValues: apps.filter(x => false) || [],
 })
 if (isCancel(selectedApps)) {
     process.exit(0)
@@ -110,8 +287,10 @@ if (isCancel(ecpmFloorsStr)) {
 }
 const ecpmFloors = ecpmFloorsStr.split(',').map(x => parseFloat(x.trim()))
 const settings: Record<string, Partial<Record<AdFormat, number[]>>> = {
-    gameEnd: {
+    default: {
         Interstitial: ecpmFloors,
+        Rewarded: ecpmFloors,
+        RewardedInterstitial: ecpmFloors,
     }
 }
 
@@ -139,6 +318,7 @@ for (const app of selectedApps) {
     // create a map of ad units
     const adUnitsMap = chain(allAdUnits)
         .pipe(
+            $op(filter)(x => x.name.startsWith('cubeage/')),
             $op(groupBy)(x => parseAdUnitName(x.name).placementId),
             $op(mapValues)(x => chain(x)
                 .pipe(
@@ -167,11 +347,12 @@ for (const app of selectedApps) {
             const ecpmAdUnits = adUnitsMap[placementId]?.[format] || {}
             // console.log('ecpmAdUnitsMap', ecpmAdUnitsMap)
 
+            const resultAdUnits: Record<number, string> = {}
             let isInsufficientDataAPIQuota = false
             const ecpmFloorAdUnitsToRemove: string[] = []
             for (const ecpmFloor of ecpmFloors!) {
                 const adUnits = ecpmAdUnits[ecpmFloor] || []
-                const adUnit = firstOrDefault(adUnits, null)
+                let adUnit = firstOrDefault(adUnits, null)
                 if (adUnits.length > 1) {
                     ecpmFloorAdUnitsToRemove.push(...adUnits.slice(1).map(x => x.adUnitId))
                 }
@@ -201,7 +382,7 @@ for (const app of selectedApps) {
                     // create ecpm floor
                     // console.log('create', ecpmFloor)
                     try {
-                        await admob.createAdUnit({
+                        adUnit = await admob.createAdUnit({
                             appId: app.appId!,
                             name,
                             adFormat: format as AdFormat,
@@ -211,7 +392,7 @@ for (const app of selectedApps) {
                                 currency: 'USD'
                             }
                         })
-                        consola.success('Created ad unit', name)
+                        consola.success('Created ad unit', adUnit.adUnitId)
                     } catch (e) {
                         if (e instanceof Error && e.message.includes('Insufficient Data API quota')) {
                             consola.fail(e.message)
@@ -220,6 +401,10 @@ for (const app of selectedApps) {
                             console.error(e)
                         }
                     }
+                }
+
+                if (adUnit) {
+                    resultAdUnits[ecpmFloor] = 'ca-app-pub-7587088496225646/' + adUnit?.adUnitId
                 }
             }
 
@@ -235,6 +420,19 @@ for (const app of selectedApps) {
                 }
             }
             // await bulkRemoveAdUnits(unitsToBeRemoved.map(x => x.adUnitId))
+
+
+            // let ecpmFloorsMap = adUnitsMap[placementId]?.[format] || {}
+            // let ecpmFloors2 = mapValues(ecpmFloorsMap, x => x.map(x => x.adUnitId)[0])
+            // // update to firebase
+            consola.info('Updating remote config', placementId, format, resultAdUnits)
+            await firebaseManager.updateAdUnits({
+                projectId: app.projectId,
+                platform: app.platform,
+                placementId: placementId,
+                format: format as AdFormat,
+                ecpmFloors: resultAdUnits
+            })
         }
 
         // remove non-exising format ad units
@@ -256,6 +454,8 @@ for (const app of selectedApps) {
                 consola.fail('Failed to remove ad units', formatAdUnitsToRemove.map(x => x.name))
             }
         }
+
+
     }
 
     // remove non-exising placement ad units
@@ -297,4 +497,6 @@ for (const app of selectedApps) {
             consola.fail('Failed to remove ad units', placementAdUnitsToRemove.map(x => x.name))
         }
     }
+
+
 }

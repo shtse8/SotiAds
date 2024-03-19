@@ -1,7 +1,6 @@
 import consola from 'consola'
 import { chromium, type Cookie } from 'playwright'
-
-export type AdFormat = 'Interstitial' | 'Rewarded' | 'Banner' | 'RewardedInterstitial' | 'AppOpen'
+import type { AdFormat, Platform } from './base'
 export type DynamicObject = Record<string, any>
 export type EcpmFloor = {
     mode: 'Google Optimize',
@@ -13,7 +12,6 @@ export type EcpmFloor = {
 } | {
     mode: 'Disabled'
 }
-
 function createDynamicObject<T extends object>(target: T = {} as T): DynamicObject {
     const handler: ProxyHandler<T> = {
         get(target, property, receiver) {
@@ -168,7 +166,63 @@ function createBody(options: Partial<AdUnitOptions>) {
     return body.__target__
 }
 
+function parseAdUnitResponse(response: any) {
+    // handle ad format
+    let adFormat: AdFormat
+    if (response[14] == 1 && response[17] == true) {
+        adFormat = 'Rewarded'
+    } else if (response[14] == 8 && response[17] == true) {
+        adFormat = 'RewardedInterstitial'
+    } else if (response[14] == 1 && !response[17]) {
+        adFormat = 'Interstitial'
+    } else if (response[14] == 0 && response[21] == true) {
+        adFormat = 'Banner'
+    } else if (response[14] == 7 && response[15] == true) {
+        adFormat = 'AppOpen'
+    } else {
+        throw new Error('Unknown ad format: ' + JSON.stringify(response))
+    }
 
+
+    // handle ecpm floors
+    let ecpmFloor: EcpmFloor
+    switch (response[23][1]) {
+        case 1:
+            ecpmFloor = {
+                mode: 'Disabled'
+            }
+            break
+        case 2:
+            ecpmFloor = {
+                mode: 'Google Optimize',
+                level: response[23][2] === 1 ? 'High' : response[23][2] === 2 ? 'Medium' : 'Low'
+            }
+            break
+        case 3:
+            ecpmFloor = {
+                mode: 'Manual floor',
+                value: response[23][3][1][1] / 1000000,
+                currency: response[23][3][1][2]
+            }
+            break
+        default:
+            throw new Error('Unknown ecpm floor mode')
+    }
+    return {
+        adUnitId: response[1] as string,
+        appId: response[2] as string,
+        name: String(response[3]),
+        adFormat,
+        ecpmFloor,
+    } as AdUnit
+}
+interface AdUnit {
+    adUnitId: string
+    appId: string
+    name: string
+    adFormat: AdFormat
+    ecpmFloor: EcpmFloor
+}
 export async function getListOfAdUnits(appId: string, config: { admobAuthData: AdmobAuthData }) {
     const { admobAuthData } = config
     // const [appIdPrefix, appIdShort] = appId.split('~')
@@ -193,56 +247,10 @@ export async function getListOfAdUnits(appId: string, config: { admobAuthData: A
     if (!Array.isArray(json[1]) || json[1].length === 0) {
         return [];
     }
-    const result = [];
-    for (const adUnit of json[1]) {
-        // handle ad format
-        let adFormat: AdFormat
-        if (adUnit[14] == 1 && adUnit[17] == true) {
-            adFormat = 'Rewarded'
-        } else if (adUnit[14] == 8 && adUnit[17] == true) {
-            adFormat = 'RewardedInterstitial'
-        } else if (adUnit[14] == 1 && !adUnit[17]) {
-            adFormat = 'Interstitial'
-        } else if (adUnit[14] == 0 && adUnit[21] == true) {
-            adFormat = 'Banner'
-        } else if (adUnit[14] == 7 && adUnit[15] == true) {
-            adFormat = 'AppOpen'
-        } else {
-            throw new Error('Unknown ad format: ' + JSON.stringify(adUnit))
-        }
-
-
-        // handle ecpm floors
-        let ecpmFloor: EcpmFloor
-        switch (adUnit[23][1]) {
-            case 1:
-                ecpmFloor = {
-                    mode: 'Disabled'
-                }
-                break
-            case 2:
-                ecpmFloor = {
-                    mode: 'Google Optimize',
-                    level: adUnit[23][2] === 1 ? 'High' : adUnit[23][2] === 2 ? 'Medium' : 'Low'
-                }
-                break
-            case 3:
-                ecpmFloor = {
-                    mode: 'Manual floor',
-                    value: adUnit[23][3][1][1] / 1000000,
-                    currency: adUnit[23][3][1][2]
-                }
-                break
-            default:
-                throw new Error('Unknown ecpm floor mode')
-        }
-        result.push({
-            adUnitId: adUnit[1],
-            appId: adUnit[2],
-            name: String(adUnit[3]),
-            adFormat,
-            ecpmFloor,
-        })
+    const result = [] as AdUnit[];
+    for (const entry of json[1]) {
+        const adUnit = parseAdUnitResponse(entry)
+        result.push(adUnit)
     }
     return result
 }
@@ -284,6 +292,8 @@ export async function createAdUnit(options: AdUnitOptions, config: { admobAuthDa
         const message = await getErrorMessage(response)
         throw new Error('Failed to create ad unit: ' + message)
     }
+    const json = await response.json() as any
+    return parseAdUnitResponse(json[1])
 }
 
 // body: f.req: {"1":{"1":"8767339703","2":"1598902297","3":"cubeage/gameEnd/ecpm/6","9":false,"11":false,"14":1,"15":true,"16":[0,1,2],"17":false,"21":false,"22":{},"23":{"1":3,"3":{"1":{"1":"1000000","2":"USD"}}},"27":{"1":1}},"2":{"1":["cpm_floor_settings"]}}
@@ -374,8 +384,16 @@ function convertCookiesToCookieStr(cookies: Cookie[]): string {
     return cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
 }
 
+interface GoogleAuthData {
+    cookies: Cookie[]
+}
+
+interface AuthData {
+    googleAuthData: GoogleAuthData
+    admobAuthData: AdmobAuthData
+}
 export function getAdmobAuthData() {
-    return new Promise<AdmobAuthData>(async resolve => {
+    return new Promise<AuthData>(async resolve => {
         const browser = await chromium.launch({
             headless: false,
         })
@@ -396,8 +414,13 @@ export function getAdmobAuthData() {
                     }
                     browser.close()
                     resolve({
-                        'x-framework-xsrf-token': xsrfToken,
-                        cookie: convertCookiesToCookieStr(cookies)
+                        admobAuthData: {
+                            'x-framework-xsrf-token': xsrfToken,
+                            cookie: convertCookiesToCookieStr(cookies)
+                        },
+                        googleAuthData: {
+                            cookies: await context.cookies()
+                        }
                     })
                 }
             }
@@ -408,12 +431,14 @@ export function getAdmobAuthData() {
 interface AdmobAppResult {
     appId: string
     name: string
-    platform: 'Android' | 'iOS'
+    platform: Platform
     status: 'Active' | 'Inactive'
+    packageName: string
+    projectId: string
 }
 export async function listApps(config: { admobAuthData: AdmobAuthData }): Promise<AdmobAppResult[]> {
     const { admobAuthData } = config
-    const response = await fetch("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetAppSnippets?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {
+    const response = await fetch("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {
         method: 'POST',
         headers: {
             'content-type': 'application/x-www-form-urlencoded',
@@ -427,11 +452,14 @@ export async function listApps(config: { admobAuthData: AdmobAuthData }): Promis
     }
 
     const json = await response.json() as any
+    consola.log(json)
     return json[1].map((x: any) => ({
         appId: x[1],
         name: x[2],
         platform: x[3] == 1 ? 'iOS' : 'Android',
-        status: x[19] ? 'Inactive' : 'Active'
+        status: x[19] ? 'Inactive' : 'Active',
+        packageName: x[22],
+        projectId: x?.[23]?.[2]?.[1]
     }))
 }
 
