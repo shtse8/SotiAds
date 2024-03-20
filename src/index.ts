@@ -198,7 +198,10 @@ class FirebaseManager {
         const remoteConfig = getRemoteConfig(app)
         const template = await remoteConfig.getTemplate()
         updater(template)
-
+        if (JSON.stringify(template) === JSON.stringify(await remoteConfig.getTemplate())) {
+            consola.info('No changes')
+            return
+        }
         await remoteConfig.publishTemplate(template)
     }
 
@@ -225,9 +228,10 @@ class FirebaseManager {
                 description: 'Ad placement ${placementId} values',
                 parameters: {}
             }
-
+            group.parameters ??= {}
             for (const [ecpm, adUnitId] of Object.entries(ecpmFloors)) {
                 const key = groupKey + '_' + (Number(ecpm) * 10000)
+
                 const parameter = group.parameters[key] ??= {
                     defaultValue: {
                         useInAppDefault: true
@@ -433,6 +437,7 @@ for (const app of selectedApps) {
                 format: format as AdFormat,
                 ecpmFloors: resultAdUnits
             })
+            consola.success('Updated remote config', placementId, format, resultAdUnits)
         }
 
         // remove non-exising format ad units
