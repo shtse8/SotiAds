@@ -14,7 +14,7 @@ import { chromium } from 'playwright-extra'
 import stealth from 'puppeteer-extra-plugin-stealth'
 import type { AdFormat, Platform } from './base'
 
-const cacheFile = Bun.file('cache.json')
+const cacheFile = Bun.file('.cache')
 const authData = await cacheFile.exists() ? await (cacheFile.json() as ReturnType<typeof getAdmobAuthData>) : await getAdmobAuthData()
 Bun.write(cacheFile, JSON.stringify(authData))
 
