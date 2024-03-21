@@ -13,6 +13,7 @@ import { createApp, createRouter } from 'h3'
 import { chromium } from 'playwright-extra'
 import stealth from 'puppeteer-extra-plugin-stealth'
 import type { AdFormat, Platform } from './base'
+import { getAppConfig, getConfiguredApps } from './read'
 
 const cacheFile = Bun.file('.cache')
 const authData = await cacheFile.exists() ? await (cacheFile.json() as ReturnType<typeof getAdmobAuthData>) : await getAdmobAuthData()
@@ -267,36 +268,39 @@ await firebaseManager.init()
 
 
 const apps = await admob.listApps()
-consola.info('apps', apps)
+// consola.info('apps', apps)
+const configuredApps = getConfiguredApps()
+const selectedApps = apps.filter(x => x.projectId).filter(x => configuredApps.includes(x.appId!))
+console.log('selectedApps', selectedApps)
 
-const selectedApps = await multiselect({
-    message: 'Select apps',
-    options: apps.filter(x => x.projectId).map(x => ({
-        label: (x.name || x.appId) + ' (' + x.projectId + ' - ' + x.platform + ':' + x.packageName + ')',
-        value: x,
-    })),
-    initialValues: apps.filter(x => false) || [],
-})
-if (isCancel(selectedApps)) {
-    process.exit(0)
-}
+// const selectedApps = await multiselect({
+//     message: 'Select apps',
+//     options: apps.filter(x => x.projectId).map(x => ({
+//         label: (x.name || x.appId) + ' (' + x.projectId + ' - ' + x.platform + ':' + x.packageName + ')',
+//         value: x,
+//     })),
+//     initialValues: apps.filter(x => false) || [],
+// })
+// if (isCancel(selectedApps)) {
+//     process.exit(0)
+// }
 
-// prompt user to select default ecpm floors
-const ecpmFloorsStr = await text({
-    message: 'Enter default ecpm floors, separated by comma',
-    initialValue: '1000,500,300,100,90,80,70,60,50,40,30,20,10,9,8,7,6,5,4.5,4,3.5,3,2.5,2,1.5,1',
-})
-if (isCancel(ecpmFloorsStr)) {
-    process.exit(0)
-}
-const ecpmFloors = ecpmFloorsStr.split(',').map(x => parseFloat(x.trim()))
-const settings: Record<string, Partial<Record<AdFormat, number[]>>> = {
-    default: {
-        Interstitial: ecpmFloors,
-        Rewarded: ecpmFloors,
-        RewardedInterstitial: ecpmFloors,
-    }
-}
+// // prompt user to select default ecpm floors
+// const ecpmFloorsStr = await text({
+//     message: 'Enter default ecpm floors, separated by comma',
+//     initialValue: '1000,500,300,100,90,80,70,60,50,40,30,20,10,9,8,7,6,5,4.5,4,3.5,3,2.5,2,1.5,1',
+// })
+// if (isCancel(ecpmFloorsStr)) {
+//     process.exit(0)
+// }
+// const ecpmFloors = ecpmFloorsStr.split(',').map(x => parseFloat(x.trim()))
+// const settings: Record<string, Partial<Record<AdFormat, number[]>>> = {
+//     default: {
+//         Interstitial: ecpmFloors,
+//         Rewarded: ecpmFloors,
+//         RewardedInterstitial: ecpmFloors,
+//     }
+// }
 
 interface AdUnitNameParts {
     placementId: string
@@ -318,6 +322,7 @@ function stringifyAdUnitName(options: AdUnitNameParts): string {
 
 
 for (const app of selectedApps) {
+    const appConfig = getAppConfig(app.appId!)
     const allAdUnits = await admob.getListOfAdUnits(app.appId)
     // create a map of ad units
     const adUnitsMap = chain(allAdUnits)
@@ -339,8 +344,9 @@ for (const app of selectedApps) {
         .value()
 
     consola.info('Updating ad units for', app.name)
-    for (const [placementId, formats] of Object.entries(settings)) {
-        for (const [format, ecpmFloors] of Object.entries(formats)) {
+    for (const [placementId, formats] of Object.entries(appConfig.placements)) {
+        for (const [format, formatConfig] of Object.entries(formats)) {
+            const ecpmFloors = formatConfig.ecpmFloors
             // get all ad units for the app and see if they match the template
             // const allAdUnits = await admobClient.accounts.adUnits.list({
             //     parent: selectedAccount.name!,

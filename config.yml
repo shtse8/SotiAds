@@ -1,0 +1,65 @@
+default:
+  ecpmFloors:
+    - 1000
+    - 500
+    - 300
+    - 100
+    - 90
+    - 80
+    - 70
+    - 60
+    - 50
+    - 40
+    - 30
+    - 20
+    - 10
+    - 9
+    - 8
+    - 7
+    - 6
+    - 5
+    - 4.5
+    - 4
+    - 3.5
+    - 3
+    - 2.5
+    - 2
+    - 1
+  placements:
+    default:
+      interstitial:
+      rewarded:
+      rewardedInterstitial:
+
+apps:
+  6975353685:
+    mediations:
+      meta:
+        placements:
+          default:
+            interstitial:
+              placementId: "1418759102224789_1470782130355819"
+            rewarded:
+              placementId: "1418759102224789_1470782187022480"
+            rewardedInterstitial:
+              placementId: "1418759102224789_1470782413689124"
+      mintegral:
+        appId: "261228"
+        placements:
+          default:
+            interstitial:
+              placementId: "1280999"
+              adUnitId: "3040758"
+            rewarded:
+              placementId: "1280912"
+              adUnitId: "3040657"
+      pangle:
+        appId: "8141816"
+        placements:
+          formats:
+            interstitial:
+              placementId: "980541689"
+            rewarded:
+              placementId: "980541690"
+      applovin:
+        sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
