@@ -1,6 +1,7 @@
 import consola from 'consola'
 import { chromium, type Cookie } from 'playwright'
-import type { AdFormat, Platform } from './base'
+import type { AdFormat, Platform } from '../base'
+import type { AdmobAuthData } from './google'
 export type DynamicObject = Record<string, any>
 export type EcpmFloor = {
     mode: 'Google Optimize',
@@ -374,59 +375,6 @@ async function getErrorMessage(response: Response) {
     return errorMessage
 }
 
-
-interface AdmobAuthData {
-    'x-framework-xsrf-token': string,
-    cookie: string
-}
-
-function convertCookiesToCookieStr(cookies: Cookie[]): string {
-    return cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
-}
-
-interface GoogleAuthData {
-    cookies: Cookie[]
-}
-
-interface AuthData {
-    googleAuthData: GoogleAuthData
-    admobAuthData: AdmobAuthData
-}
-export function getAdmobAuthData() {
-    return new Promise<AuthData>(async resolve => {
-        const browser = await chromium.launch({
-            headless: false,
-        })
-        const page = await browser.newPage()
-        await page.goto('https://apps.admob.com/')
-
-        // watch page 
-        page.on('framenavigated', async frame => {
-            if (frame === page.mainFrame()) {
-                if (page.url() === 'https://apps.admob.com/v2/home') {
-                    console.log('new url', page.url());
-                    const context = page.context()
-                    const cookies = await context.cookies('https://apps.admob.com/v2/home')
-                    const body = await page.content()
-                    const [_, xsrfToken] = body.match(/xsrfToken: '([^']+)'/) || []
-                    if (!xsrfToken) {
-                        throw new Error('xsrfToken not found')
-                    }
-                    browser.close()
-                    resolve({
-                        admobAuthData: {
-                            'x-framework-xsrf-token': xsrfToken,
-                            cookie: convertCookiesToCookieStr(cookies)
-                        },
-                        googleAuthData: {
-                            cookies: await context.cookies()
-                        }
-                    })
-                }
-            }
-        });
-    })
-}
 
 interface AdmobAppResult {
     appId: string
