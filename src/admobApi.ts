@@ -216,7 +216,7 @@ function parseAdUnitResponse(response: any) {
         ecpmFloor,
     } as AdUnit
 }
-interface AdUnit {
+export interface AdUnit {
     adUnitId: string
     appId: string
     name: string

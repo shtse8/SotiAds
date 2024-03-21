@@ -1,8 +1,8 @@
 import { select, multiselect, text, isCancel } from '@clack/prompts'
 import { firebase_v1beta1, google } from 'googleapis'
 import consola from 'consola'
-import { getAdmobAuthData, API } from './admobApi'
-import { entries, chain, groupBy, firstOrDefault, mapValues, flatMap, $op, filter, kebabCase, camelCase } from 'xdash'
+import { getAdmobAuthData, API, type AdUnit } from './admobApi'
+import { entries, chain, groupBy, firstOrDefault, mapValues, flatMap, $op, filter, kebabCase, camelCase, values, pascalCase } from 'xdash'
 import open from 'open'
 import { createServer } from 'http'
 import { getRemoteConfig, type RemoteConfigTemplate } from 'firebase-admin/remote-config'
@@ -317,9 +317,12 @@ function parseAdUnitName(name: string): AdUnitNameParts {
 }
 
 function stringifyAdUnitName(options: AdUnitNameParts): string {
-    return `cubeage/${options.placementId}/${options.format}/${options.ecpmFloor}`
+    return `cubeage/${camelCase(options.placementId)}/${camelCase(options.format)}/${options.ecpmFloor}`
 }
 
+function toAdFormat(format: string): AdFormat {
+    return pascalCase(format) as AdFormat
+}
 
 for (const app of selectedApps) {
     const appConfig = getAppConfig(app.appId!)
@@ -355,159 +358,98 @@ for (const app of selectedApps) {
             // console.log(allAdUnits)
 
             const ecpmAdUnits = adUnitsMap[placementId]?.[format] || {}
-            // console.log('ecpmAdUnitsMap', ecpmAdUnitsMap)
 
-            const resultAdUnits: Record<number, string> = {}
-            let isInsufficientDataAPIQuota = false
-            const ecpmFloorAdUnitsToRemove: string[] = []
-            for (const ecpmFloor of ecpmFloors!) {
+            const resultAdUnits = new Map<number, AdUnit>()
+            const toRemove: string[] = []
+            for (const ecpmFloor in ecpmAdUnits) {
                 const adUnits = ecpmAdUnits[ecpmFloor] || []
-                let adUnit = firstOrDefault(adUnits, null)
-                if (adUnits.length > 1) {
-                    ecpmFloorAdUnitsToRemove.push(...adUnits.slice(1).map(x => x.adUnitId))
-                }
-                if (adUnit) {
-                    // update ecpm floor
-                    if (adUnit.ecpmFloor.mode === 'Manual floor' && adUnit.ecpmFloor.value !== ecpmFloor) {
-                        consola.info('Updating ad unit', adUnit.name, `from ${adUnit.ecpmFloor.value} to ${ecpmFloor}`)
-                        try {
-                            await admob.updateAdUnit(adUnit.appId, adUnit.adUnitId, {
-                                ecpmFloor: {
-                                    mode: 'Manual floor',
-                                    value: ecpmFloor,
-                                    currency: 'USD'
-                                }
-                            })
-                        } catch (e) {
-                            console.error(e)
-                        }
+                if (adUnits.length > 0) {
+                    const [adUnit, ...rest] = adUnits
+                    if (rest.length > 0) {
+                        toRemove.push(...rest.map(x => x.adUnitId))
                     }
-                } else {
-                    const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
-                    consola.info('Creating ad unit', name)
-                    if (isInsufficientDataAPIQuota) {
-                        consola.fail('Insufficient Data API quota')
-                        continue;
-                    }
-                    // create ecpm floor
-                    // console.log('create', ecpmFloor)
-                    try {
-                        adUnit = await admob.createAdUnit({
-                            appId: app.appId!,
-                            name,
-                            adFormat: format as AdFormat,
-                            ecpmFloor: {
-                                mode: 'Manual floor',
-                                value: ecpmFloor,
-                                currency: 'USD'
-                            }
-                        })
-                        consola.success('Created ad unit', adUnit.adUnitId)
-                    } catch (e) {
-                        if (e instanceof Error && e.message.includes('Insufficient Data API quota')) {
-                            consola.fail(e.message)
-                            isInsufficientDataAPIQuota = true
-                        } else {
-                            console.error(e)
-                        }
-                    }
-                }
-
-                if (adUnit) {
-                    resultAdUnits[ecpmFloor] = 'ca-app-pub-7587088496225646/' + adUnit?.adUnitId
+                    resultAdUnits.set(parseFloat(ecpmFloor), adUnit)
                 }
             }
 
-            // remove ad units that are not in the template
-            console.log('unitsToRemove', ecpmFloorAdUnitsToRemove.length)
-            if (ecpmFloorAdUnitsToRemove.length > 0) {
-                consola.info('Removing ad units', ecpmFloorAdUnitsToRemove)
+            // print stats
+            const toUpdate = Object.entries(resultAdUnits).filter(([ecpmFloor, adUnit]) => adUnit.ecpmFloor.value !== ecpmFloor)
+            const toCreate = ecpmFloors.filter(x => !resultAdUnits.has(x))
+            consola.info('Changes for', placementId, format)
+            consola.info('To create', toCreate)
+            consola.info('To update', toUpdate)
+            consola.info('To remove', toRemove)
+
+            if (toCreate.length === 0 && toUpdate.length === 0 && toRemove.length === 0) {
+                consola.info('No changes')
+            }
+
+            // process changes
+
+            // create ad units
+            for (const ecpmFloor of toCreate) {
+                const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
+                consola.info('Creating ad unit', name)
                 try {
-                    await admob.bulkRemoveAdUnits(ecpmFloorAdUnitsToRemove)
-                    consola.success('Removed ad units', ecpmFloorAdUnitsToRemove)
+                    const adUnit = await admob.createAdUnit({
+                        appId: app.appId!,
+                        name,
+                        adFormat: toAdFormat(format),
+                        ecpmFloor: {
+                            mode: 'Manual floor',
+                            value: ecpmFloor,
+                            currency: 'USD'
+                        }
+                    })
+                    consola.success('Created ad unit', adUnit.adUnitId)
+                    resultAdUnits.set(ecpmFloor, adUnit)
                 } catch (e) {
-                    consola.fail('Failed to remove ad units', ecpmFloorAdUnitsToRemove)
+                    consola.fail('Failed to create ad unit', e)
+                    if (e instanceof Error && e.message.includes('Insufficient Data API quota')) {
+                        consola.fail(e.message)
+                        break;
+                    }
                 }
             }
-            // await bulkRemoveAdUnits(unitsToBeRemoved.map(x => x.adUnitId))
 
+            // update ad units
+            for (const [ecpmFloor, adUnit] of toUpdate) {
+                consola.info('Updating ad unit', adUnit.name, `from ${adUnit.ecpmFloor.value} to ${ecpmFloor}`)
+                try {
+                    await admob.updateAdUnit(adUnit.appId, adUnit.adUnitId, {
+                        ecpmFloor: {
+                            mode: 'Manual floor',
+                            value: Number(ecpmFloor),
+                            currency: 'USD'
+                        }
+                    })
+                    consola.success('Updated ad unit', adUnit.adUnitId)
+                } catch (e) {
+                    consola.fail('Failed to update ad unit', e)
+                }
+            }
 
-            // let ecpmFloorsMap = adUnitsMap[placementId]?.[format] || {}
-            // let ecpmFloors2 = mapValues(ecpmFloorsMap, x => x.map(x => x.adUnitId)[0])
-            // // update to firebase
+            // remove ad units
+            if (toRemove.length > 0) {
+                consola.info('Removing ad units', toRemove)
+                try {
+                    await admob.bulkRemoveAdUnits(toRemove)
+                    consola.success('Removed ad units', toRemove)
+                } catch (e) {
+                    consola.fail('Failed to remove ad units', e)
+                }
+            }
+
+            // commit changes to remote config
             consola.info('Updating remote config', placementId, format, resultAdUnits)
             await firebaseManager.updateAdUnits({
                 projectId: app.projectId,
                 platform: app.platform,
                 placementId: placementId,
-                format: format as AdFormat,
-                ecpmFloors: resultAdUnits
+                format: toAdFormat(format),
+                ecpmFloors: mapValues(Object.fromEntries(resultAdUnits), x => x.adUnitId)
             })
             consola.success('Updated remote config', placementId, format, resultAdUnits)
         }
-
-        // remove non-exising format ad units
-        const formatAdUnitsToRemove = flatMap(
-            entries(adUnitsMap[placementId] || {}),
-            ([format, ecpmFloors]) => {
-                if (format in formats) {
-                    return []
-                }
-                return flatMap(entries(ecpmFloors), ([ecpmFloor, adUnits]) => adUnits)
-            }
-        )
-        if (formatAdUnitsToRemove.length > 0) {
-            consola.info('Removing ad units', formatAdUnitsToRemove.map(x => x.name))
-            try {
-                await admob.bulkRemoveAdUnits(formatAdUnitsToRemove.map(x => x.adUnitId))
-                consola.success('Removed ad units', formatAdUnitsToRemove.map(x => x.name))
-            } catch (e) {
-                consola.fail('Failed to remove ad units', formatAdUnitsToRemove.map(x => x.name))
-            }
-        }
-
-
     }
-
-    // remove non-exising placement ad units
-    const placementAdUnitsToRemove = chain(adUnitsMap)
-        .pipe(
-            entries,
-            $op(flatMap)(([placementId, formats]) => {
-                if (placementId in settings) {
-                    return []
-                }
-                return chain(formats)
-                    .pipe(
-                        entries,
-                        $op(flatMap)(([format, ecpmFloors]) => chain(ecpmFloors)
-                            .pipe(
-                                entries,
-                                $op(flatMap)(([ecpmFloor, adUnits]) => adUnits))
-                            .value()
-                        ))
-                    .value()
-            }))
-        .value()
-
-    // flatMap(
-    //     entries(adUnitsMap),
-    //     ([placementId, formats]) => {
-    //         if (placementId in settings) {
-    //             return []
-    //         }
-    //         return flatMap(entries(formats), ([format, ecpmFloors]) => flatMap(entries(ecpmFloors), ([ecpmFloor, adUnits]) => adUnits))
-    //     }
-    // )
-    if (placementAdUnitsToRemove.length > 0) {
-        consola.info('Removing ad units', placementAdUnitsToRemove.map(x => x.name))
-        try {
-            await admob.bulkRemoveAdUnits(placementAdUnitsToRemove.map(x => x.adUnitId))
-            consola.success('Removed ad units', placementAdUnitsToRemove.map(x => x.name))
-        } catch (e) {
-            consola.fail('Failed to remove ad units', placementAdUnitsToRemove.map(x => x.name))
-        }
-    }
-
-
 }

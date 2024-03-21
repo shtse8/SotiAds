@@ -7,7 +7,7 @@ const data = parse(content);
 
 const defaultConfig = data.default;
 // merge default placements formats ecpm
-for (const placement of Object.values(defaultConfig.placements)) {
+for (const placement of Object.values(defaultConfig.placements) as any[]) {
     for (const formatId in placement) {
         const format = placement[formatId] ||= {};
         format.ecpmFloors ||= defaultConfig.ecpmFloors;
@@ -24,12 +24,15 @@ interface AppConfig {
 
 }
 export function getAppConfig(appId: string): AppConfig {
-    const app = data.apps[appId]
+    if (!(appId in data.apps)) {
+        throw new Error(`App with id ${appId} not found`);
+    }
+    const app = data.apps[appId] ||= {};
     const placements = app.placements ||= defaultConfig.placements;
     return app
 }
 
-// const config = getAppConfig(6975353685);
+// const config = getAppConfig("7403857423");
 // console.dir(config, { depth: null });
 
 export function getConfiguredApps() {
