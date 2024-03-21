@@ -4,20 +4,23 @@ import { chain, groupBy, mapValues, $op, filter, camelCase, pascalCase } from 'x
 import type { AdFormat } from './base'
 import { getAppConfig, getConfiguredApps } from './read'
 import { FirebaseManager } from './apis/firebase'
-import { getAdmobAuthData, getAuthCode } from './apis/google'
+import { getAdmobAuthData, getAuthTokens } from './apis/google'
 
 const authData = await getAdmobAuthData()
 const admob = new API(authData.admobAuthData)
 
-const code = await getAuthCode({
+const tokens = await getAuthTokens({
     cookies: authData.googleAuthData.cookies,
 })
 
-console.log('code', code)
+if (!tokens.access_token) {
+    throw new Error('No access token')
+}
+
+console.log('tokens', tokens)
 
 // update refresh token
-
-const firebaseManager = new FirebaseManager(code)
+const firebaseManager = new FirebaseManager(tokens.access_token)
 await firebaseManager.init()
 
 // get all accounts

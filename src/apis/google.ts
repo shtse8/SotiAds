@@ -76,10 +76,9 @@ export async function getAdmobAuthData() {
     return result
 }
 
-export async function getAuthCode(options: {
+export async function getAuthTokens(options: {
     cookies?: Cookie[]
 }) {
-
     const { cookies } = options
 
     const oauth2Client = new google.auth.OAuth2(
@@ -156,5 +155,8 @@ export async function getAuthCode(options: {
         })()
     ])
 
-    return code
+    // refresh token
+    const { tokens } = await oauth2Client.getToken(code)
+
+    return tokens
 }
