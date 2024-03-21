@@ -218,7 +218,7 @@ for (const app of selectedApps) {
                 platform: app.platform,
                 placementId: placementId,
                 format: toAdFormat(format),
-                ecpmFloors: mapValues(Object.fromEntries(resultAdUnits), x => x.adUnitId)
+                ecpmFloors: mapValues(Object.fromEntries(resultAdUnits), x => `ca-app-pub-7587088496225646/${x.adUnitId}`)
             })
             consola.success('Updated remote config', placementId, format, resultAdUnits)
         }
