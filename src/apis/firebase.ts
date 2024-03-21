@@ -103,8 +103,10 @@ export class FirebaseManager {
         }
         const remoteConfig = getRemoteConfig(app)
         const template = await remoteConfig.getTemplate()
+        const before = JSON.stringify(template)
         updater(template)
-        if (JSON.stringify(template) === JSON.stringify(await remoteConfig.getTemplate())) {
+        const after = JSON.stringify(template)
+        if (before === after) {
             consola.info('No changes')
             return
         }
