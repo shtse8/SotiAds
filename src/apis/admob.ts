@@ -529,10 +529,7 @@ export class API {
                 },
                 ...adSources.map((x) => ({
                     2: x.id,
-                    3: inlineSwitch(format)
-                        .case('Interstitial', () => 6)
-                        .case('Rewarded', () => 3)
-                        .execute(),
+                    3: adSourceFormatReversedMap[format],
                     4: 1,
                     5: {
                         1: "10000",
@@ -732,6 +729,7 @@ const adSourceFormatMap: Record<number, AdFormat> = {
     6: 'Interstitial',
     7: 'RewardedInterstitial'
 }
+const adSourceFormatReversedMap = Object.fromEntries(Object.entries(adSourceFormatMap).map(([x, y]) => [y, x]))
 
 
 // interface AdSource {
