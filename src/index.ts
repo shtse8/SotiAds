@@ -37,7 +37,7 @@ await firebaseManager.init()
 //     process.exit(0)
 // }
 
-
+consola.info('Fetching apps')
 const apps = await admob.listApps()
 // consola.info('apps', apps)
 const configuredApps = getConfiguredApps()
@@ -212,16 +212,24 @@ for (const app of selectedApps) {
                 }
             }
 
+            // done
+            consola.success('Successfully updated ad units')
+
             // commit changes to remote config
-            consola.info('Updating remote config', placementId, format, resultAdUnits)
+            const ecpmFloorAdUnits = mapValues(Object.fromEntries(resultAdUnits), x => `ca-app-pub-7587088496225646/${x.adUnitId}`)
+            // print ecpm floor ad units
+            for (const [ecpm, adUnitId] of Object.entries(ecpmFloorAdUnits)) {
+                consola.info(`  ECPM ${ecpm} => ${adUnitId}`)
+            }
+            consola.info('Updating remote config', placementId, format)
             await firebaseManager.updateAdUnits({
                 projectId: app.projectId,
                 platform: app.platform,
                 placementId: placementId,
                 format: toAdFormat(format),
-                ecpmFloors: mapValues(Object.fromEntries(resultAdUnits), x => `ca-app-pub-7587088496225646/${x.adUnitId}`)
+                ecpmFloors: ecpmFloorAdUnits
             })
-            consola.success('Updated remote config', placementId, format, resultAdUnits)
+            consola.success('Updated remote config')
         }
     }
 }

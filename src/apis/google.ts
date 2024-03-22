@@ -155,6 +155,8 @@ export async function getAuthTokens(options: {
         })()
     ])
 
+    consola.info('Got code', code)
+
     // refresh token
     const { tokens } = await oauth2Client.getToken(code)
 
