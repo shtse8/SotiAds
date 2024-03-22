@@ -677,9 +677,9 @@ export class API {
             1: adUnitIds.map(x => ({
                 1: "-1",
                 3: adapter.adSourceId,
-                4: Object.entries(data).map(([k, v]) => ({
-                    1: camelCase(k),
-                    2: v
+                4: adapter.fields.map(x => ({
+                    1: x,
+                    2: data[camelCase(x)] // we always use camel
                 })),
                 12: x,
                 15: "",
