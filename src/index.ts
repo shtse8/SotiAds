@@ -86,11 +86,15 @@ function stringifyAdUnitName(options: AdUnitNameParts): string {
     return `cubeage/${camelCase(options.placementId)}/${camelCase(options.format)}/${options.ecpmFloor.toFixed(2)}`
 }
 
+function parseAdFormat(format: string): AdFormat {
+    return pascalCase(format) as AdFormat
+}
+
 function parseAdUnitName(name: string): AdUnitNameParts {
     const parts = name.split('/')
     return {
-        placementId: parts[1],
-        format: parts[2] as AdFormat,
+        placementId: camelCase(parts[1]),
+        format: parseAdFormat(parts[2]),
         ecpmFloor: parseFloat(parts[3]),
     }
 }
@@ -110,8 +114,8 @@ function parseMediationGroupName(name: string): MediationGroupNameParts {
     const parts = name.split('/')
     return {
         appId: parts[1],
-        placementId: parts[2],
-        format: parts[3] as AdFormat,
+        placementId: camelCase(parts[2]),
+        format: parseAdFormat(parts[3]),
     }
 }
 
@@ -131,22 +135,22 @@ const applovin = config.adSources
 console.log(applovin)
 const adSourceData = await admob.getAdSourceData()
 
-const adSourcesInput: AdSourceInput[] = Object.values(adSourceData)
-    .filter(x => x.isBidding && !x.mappingRequired && !!x.partnership[platform]?.[format])
-    .map(x => ({ id: x.id }))
-if (config.adSources?.applovin) {
-    const allocation = await admob.updateMediationAllocation(
-        adUnitId,
-        adSourceData[AdSource.Applovin].partnership![platform]![format]!,
-        config.adSources.applovin
-    )
-    console.log("allocation", allocation)
-    adSourcesInput.push({
-        id: AdSource.Applovin,
-        allocationId: allocation.id,
-    })
-}
-console.log(adSourcesInput.length)
+// const adSourcesInput: AdSourceInput[] = Object.values(adSourceData)
+//     .filter(x => x.isBidding && !x.mappingRequired && !!x.partnership[platform]?.[format])
+//     .map(x => ({ id: x.id }))
+// if (config.adSources?.applovin) {
+//     const allocation = await admob.updateMediationAllocation(
+//         adUnitId,
+//         adSourceData[AdSource.Applovin].partnership![platform]![format]!,
+//         config.adSources.applovin
+//     )
+//     console.log("allocation", allocation)
+//     adSourcesInput.push({
+//         id: AdSource.Applovin,
+//         allocationId: allocation.id,
+//     })
+// }
+// console.log(adSourcesInput.length)
 
 const mediationGroups = await admob.listMediationGroups()
 const rbMeditionGroups = mediationGroups.filter(x => x.name.startsWith('cubeage/'))
@@ -184,9 +188,34 @@ const rbMeditionGroupsIndexed = chain(rbMeditionGroups)
 //     adSources: adSourcesInput
 // })
 // consola.log('Created mediation group', mediationGroup)
+interface SyncPayload<S, T, K> {
+    create: S[]
+    update: Map<K, T>
+    remove: T[]
+}
+function sync<S, T, K>(
+    source: S[],
+    getSourceKey: (x: S) => K,
+    target: T[],
+    getTargetKey: (x: T) => K
+): SyncPayload<S, T, K> {
+    const sourceKeys = new Set(source.map(getSourceKey))
+    const targetKeys = new Set(target.map(getTargetKey))
+    const create = source.filter(x => !targetKeys.has(getSourceKey(x)))
+    const update = new Map<K, T>()
+    const remove = target.filter(x => !sourceKeys.has(getTargetKey(x)))
+    for (const x of target) {
+        if (sourceKeys.has(getTargetKey(x))) {
+            update.set(getTargetKey(x), x)
+        }
+    }
+    return { create, update, remove }
+}
+
 for (const app of selectedApps) {
     const appConfig = getAppConfig(app.appId!)
     const allAdUnits = await admob.getListOfAdUnits(app.appId)
+    const rbAdUnits = allAdUnits.filter(x => x.name.startsWith('cubeage/'))
     // create a map of ad units
     const adUnitsMap = chain(allAdUnits)
         .pipe(
@@ -207,7 +236,7 @@ for (const app of selectedApps) {
         .value()
 
     consola.info('Updating ad units for', app.name)
-    for (const [placementId, formats] of Object.entries(appConfig.placements)) {
+    for (const [placementId, formats] of Object.entries(appConfig.placements || {})) {
         for (const [format, formatConfig] of Object.entries(formats)) {
             const ecpmFloors = formatConfig.ecpmFloors
             // get all ad units for the app and see if they match the template
@@ -217,44 +246,41 @@ for (const app of selectedApps) {
 
             // console.log(allAdUnits)
 
-            const ecpmAdUnits = adUnitsMap[placementId]?.[format] || {}
+            const adUnits = rbAdUnits.filter(x => {
+                const parts = parseAdUnitName(x.name)
+                return parts.placementId === placementId && parts.format === format
+            })
+            console.log(rbAdUnits)
 
-            const resultAdUnits = new Map<number, AdUnit>()
-            const toRemove: string[] = []
-            for (const ecpmFloor in ecpmAdUnits) {
-                const adUnits = ecpmAdUnits[ecpmFloor] || []
-                if (adUnits.length > 0) {
-                    const [adUnit, ...rest] = adUnits
-                    if (rest.length > 0) {
-                        toRemove.push(...rest.map(x => x.adUnitId))
-                    }
-                    resultAdUnits.set(parseFloat(ecpmFloor), adUnit)
-                }
-            }
-
-            // print stats
-            const toUpdate = Object.entries(resultAdUnits).filter(([ecpmFloor, adUnit]) => adUnit.ecpmFloor.value !== ecpmFloor)
-            const toCreate = ecpmFloors.filter(x => !resultAdUnits.has(x))
+            const { create, update, remove } = sync(
+                ecpmFloors,
+                x => x,
+                adUnits,
+                x => parseAdUnitName(x.name).ecpmFloor
+            )
             consola.info('Changes for', placementId, format)
-            consola.info('To create', toCreate)
-            consola.info('To update', toUpdate)
-            consola.info('To remove', toRemove)
+            console.info(' create', create)
+            console.info(' update', [...update.values()].map(x => parseAdUnitName(x.name).ecpmFloor))
+            console.info(' remove', remove)
 
-            if (toCreate.length === 0 && toUpdate.length === 0 && toRemove.length === 0) {
-                consola.info('No changes')
+            const resultAdUnits = {
+                ...update
             }
+            // if (create.length === 0 && update.length === 0 && remove.length === 0) {
+            //     consola.info('No changes')
+            // }
 
             // process changes
 
             // create ad units
-            for (const ecpmFloor of toCreate) {
+            for (const ecpmFloor of create) {
                 const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
                 consola.info('Creating ad unit', name)
                 try {
                     const adUnit = await admob.createAdUnit({
                         appId: app.appId!,
                         name,
-                        adFormat: toAdFormat(format),
+                        adFormat: parseAdFormat(format),
                         ecpmFloor: {
                             mode: 'Manual floor',
                             value: ecpmFloor,
@@ -274,10 +300,23 @@ for (const app of selectedApps) {
             }
 
             // update ad units
-            for (const [ecpmFloor, adUnit] of toUpdate) {
-                consola.info('Updating ad unit', adUnit.name, `from ${adUnit.ecpmFloor.value} to ${ecpmFloor}`)
+            for (const [ecpmFloor, adUnit] of update) {
+                const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
+                const needUpdates =
+                    // name
+                    adUnit.name !== name ||
+                    // ecpm floor
+                    adUnit.ecpmFloor.mode !== 'Manual floor' ||
+                    adUnit.ecpmFloor.value !== ecpmFloor
+                if (!needUpdates) {
+                    consola.info('No need to update ad unit', adUnit.name)
+                    continue
+                }
+
+                consola.info('Updating ad unit')
                 try {
                     await admob.updateAdUnit(adUnit.appId, adUnit.adUnitId, {
+                        name,
                         ecpmFloor: {
                             mode: 'Manual floor',
                             value: Number(ecpmFloor),
@@ -286,16 +325,19 @@ for (const app of selectedApps) {
                     })
                     consola.success('Updated ad unit', adUnit.adUnitId)
                 } catch (e) {
-                    consola.fail('Failed to update ad unit', e)
+                    if (e instanceof Error) {
+                        consola.fail('Failed to update ad unit:', e.message)
+                    }
                 }
             }
 
             // remove ad units
-            if (toRemove.length > 0) {
-                consola.info('Removing ad units', toRemove)
+            if (remove.length > 0) {
+                const removeIds = remove.map(x => x.adUnitId)
+                consola.info('Removing ad units', removeIds)
                 try {
-                    await admob.bulkRemoveAdUnits(toRemove)
-                    consola.success('Removed ad units', toRemove)
+                    await admob.bulkRemoveAdUnits(removeIds)
+                    consola.success('Removed ad units', removeIds)
                 } catch (e) {
                     consola.fail('Failed to remove ad units', e)
                 }

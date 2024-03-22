@@ -262,6 +262,16 @@ export interface AdSourceInput {
 export interface AloocationPayload {
     id: string,
 }
+
+function defu(a: any, b: any) {
+    const result = { ...a }
+    for (const key in b) {
+        if (result[key] === undefined) {
+            result[key] = b[key]
+        }
+    }
+    return result
+}
 export class API {
     constructor(private config: AuthData) { }
 
@@ -273,7 +283,6 @@ export class API {
     async fetch(url: string, body: any = {}) {
         const { admobAuthData: auth } = this.config
         try {
-            consola.log('body', encodeURIComponent(JSON.stringify(body)))
             const json = await ofetch(url, {
                 method: 'POST',
                 headers: {
@@ -284,9 +293,9 @@ export class API {
                 responseType: 'json'
             })
             const { 1: data, 2: error } = json
-            if (error) {
-                throw new Error(JSON.stringify(error))
-            }
+            // if (error) {
+            //     throw new Error(JSON.stringify(error))
+            // }
             return data
         } catch (e) {
             if (e instanceof FetchError) {
@@ -298,7 +307,7 @@ export class API {
                     throw new Error('Failed to fetch: ' + message)
                 } catch (e) {
                     if (e instanceof Error) {
-                        consola.error('Failed to fetch: ' + e.message, url, body)
+                        // consola.error('Failed to fetch: ' + e.message, url, body)
                         throw new Error('Failed to fetch: ' + e.message)
                     }
                 }
@@ -401,21 +410,32 @@ export class API {
             throw new Error('Ad unit not found')
         }
 
+        if (adFormat && adUnit.adFormat !== adFormat) {
+            throw new Error('Ad format cannot be changed')
+        }
+
+
+
         // const [appIdPrefix, appIdShort] = appId.split('~')
-        const body = createBody({
-            ...adUnit,
-            name,
-            adFormat,
-            frequencyCap,
-            ecpmFloor
-        })
+        const body = createBody(defu(options, adUnit))
 
         body[1][1] = adUnitId
 
-        if (options.ecpmFloor) {
-            body[2] = {
-                1: ["cpm_floor_settings"]
-            }
+        const updated = <string[]>[]
+        if (ecpmFloor && JSON.stringify(adUnit.ecpmFloor) !== JSON.stringify(ecpmFloor)) {
+            updated.push('cpm_floor_settings')
+        }
+        if (name && adUnit.name !== name) {
+            updated.push('name')
+        }
+        // if (options.frequencyCap) {
+        //     updated.push('frequency_cap')
+        // }
+
+        if (updated.length > 0) {
+            body[2] = Object.fromEntries(updated.map((x, i) => [i + 1, [x]]))
+        } else {
+            return
         }
 
         const response = await this.fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/Update?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", body);
