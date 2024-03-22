@@ -4,7 +4,7 @@ import type { AdFormat, Platform } from '../base'
 import type { AdmobAuthData, AuthData } from './google'
 import stealth from 'puppeteer-extra-plugin-stealth'
 import { ofetch, FetchError } from 'ofetch'
-import { camelCase, difference, groupBy, inlineSwitch, isArray, mapValues, type PromiseResultType, type UnwrapPromise } from 'xdash'
+import { camelCase, difference, groupBy, inlineSwitch, isArray, mapValues, union, type PromiseResultType, type UnwrapPromise, intersection } from 'xdash'
 import { string } from 'valibot'
 import { bindSelf, cacheFunc, snakeCase } from 'xdash'
 
@@ -267,6 +267,22 @@ export interface AllocationPayload {
     id: string,
 }
 
+export interface MediationGroupInput {
+    name: string
+    platform: Platform
+    format: AdFormat
+    adUnitIds: string[]
+    adSources: AdSourceInput[]
+}
+
+export interface MediationGroupPayload {
+    id: string
+    name: string
+    platform: Platform
+    format: AdFormat
+    adUnitIds: string[]
+}
+
 function defu(a: any, b: any) {
     const result = { ...a }
     for (const key in b) {
@@ -275,6 +291,10 @@ function defu(a: any, b: any) {
         }
     }
     return result
+}
+
+function admobObj(data: any[]) {
+    return Object.fromEntries(data.map((x, i) => [i + 1, x]).filter(x => x !== undefined))
 }
 export class API {
     constructor(private config: AuthData) { }
@@ -470,17 +490,28 @@ export class API {
     }
 
     parseMediationGroupResponse(response: any) {
-        return {
+        return <MediationGroupPayload>{
             id: response[1],
             name: response[2],
             platform: platformIdMap[response[4][1]],
             format: formatIdMap[response[4][2]],
             adUnitIds: response[4][3] || [] as string[]
+            // adSources: response[5]?.map((x: any) => ({
+            //     id: x[1],
+            //     adSource: x[2] as AdSource,
         }
     }
+
+    // async getMediationGroup(id: string) {
+    //     const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/Get?authuser=1&authuser=1&authuser=1&f.sid=-1119854189466099600', {
+    //         1: id
+    //     })
+    //     return this.parseMediationGroupResponse(json)
+    // }
+
     async listMediationGroups() {
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/List?authuser=1&authuser=1&authuser=1&f.sid=-2500048687334755000')
-        const result = [] as any[]
+        const result = <MediationGroupPayload[]>[]
         for (const entry of json) {
             if (entry[1] === "0") {
                 // we don't need admob default network
@@ -491,14 +522,62 @@ export class API {
         return result
     }
 
+    async updateMediationGroup(id: string, options: MediationGroupInput) {
+        // mediationGroup.
+        const { name, platform, format, adUnitIds, adSources } = options
+        const adSourceData = await this.getAdSourceData()
+        const data = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/Get?authuser=1&authuser=1&authuser=1&f.sid=-1119854189466099600', {
+            1: id
+        })
+
+        // update name
+        if (data[2] != name) {
+            data[2] = name
+        }
+
+        // update ad unit ids
+        if (data[4][3] != adUnitIds) {
+            data[4][3] = adUnitIds
+        }
+
+        // update ad sources
+        const currentAdSources = data[5]
+        const currentAdSourceIds = currentAdSources.map((x: any) => x[2])
+        const newAdSourceIds = adSources.map(x => x.id)
+        const toAdd = difference(newAdSourceIds, currentAdSourceIds)
+        const toKeep = intersection(newAdSourceIds, currentAdSourceIds)
+        if (toKeep.length != currentAdSources.length) {
+            const adSourcesRequestData = [
+                ...currentAdSources.filter((x: any) => toKeep.includes(x[2])),
+            ]
+            for (const id of toAdd) {
+                const source = adSourceData[id]
+                adSourcesRequestData.push({
+                    2: id,
+                    3: adSourceFormatReversedMap[format],
+                    4: 1,
+                    5: {
+                        1: "10000",
+                        2: 'USD'
+                    },
+                    6: false,
+                    9: source.name,
+                    11: 1,
+                    14: '1'
+                })
+            }
+            data[5] = adSourcesRequestData
+        }
+
+        const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Update?authuser=1&authuser=1&authuser=1&f.sid=7739685128981884000', {
+            1: data
+        })
+
+    }
+
+
     // {"1":"cubeage/[appid]/[platform]/[placement]/[format]","2":1,"3":{"1":2,"2":1,"3":["7023861009","6137655985","7450737654","5199058969","3738637639","7469999081","8763819327","1076900999","6512140634","2389982664","3456277041","7825222309","8342606364","1760778342","3073860019","9138303971","1904356376","7029524690","9655688034","3217438048","2842867673","4317932578","1112474290","5631014241","2425555965","1175273226","6782112687","9463228294","6298843050","4106690332","7355939703","8669021375","8039030632","2897819940","1776309966","7611924729","9352112305","4210901619","2978275641","5523983289","3672679713","5271867690","6837064958","3089391633","8150146629","2526849508","1665193972","4985761385","6628363157","4402473305"]},"4":[{"2":"1","3":1,"4":1,"5":{"1":"10000","2":"USD"},"6":false,"9":"AdMob Network","11":1,"14":"1"}]}
-    async createMediationGroup(options: {
-        name: string
-        platform: Platform
-        format: AdFormat
-        adUnitIds: string[],
-        adSources: AdSourceInput[]
-    }) {
+    async createMediationGroup(options: MediationGroupInput) {
         const { name, platform, format, adUnitIds, adSources } = options
         // const list = await this.listAdSources()
         const adSourceData = await this.getAdSourceData()

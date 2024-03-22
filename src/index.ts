@@ -126,47 +126,90 @@ function toAdFormat(format: string): AdFormat {
 
 const adSourceData = await admob.getAdSourceData()
 
+function deepEquals(a: any, b: any): b is typeof a {
+    // Check if both are the same reference or both are null/undefined
+    if (a === b) return true;
+    // If either is null/undefined (but not both, as that would have returned true above), return false
+    if (a == null || b == null) return false;
+    // Check if both are objects (including arrays, functions, etc)
+    if (typeof a === 'object' && typeof b === 'object') {
+        // Check if both are instances of the same class
+        if (a.constructor !== b.constructor) return false;
+        // Handle Arrays
+        if (Array.isArray(a)) {
+            // Check array length equality
+            if (a.length !== b.length) return false;
+            // Recursively check each element
+            for (let i = 0; i < a.length; i++) {
+                if (!deepEquals(a[i], b[i])) return false;
+            }
+            return true;
+        }
+        // Handle Objects
+        const aKeys = Object.keys(a);
+        const bKeys = Object.keys(b);
+        // Check if both objects have the same number of keys
+        if (aKeys.length !== bKeys.length) return false;
+        // Check if both objects have the same keys and recursively check values
+        for (const key of aKeys) {
+            if (!b.hasOwnProperty(key) || !deepEquals(a[key], b[key])) return false;
+        }
+        return true;
+    }
+    // If none of the above, values are of different types or not equal
+    return false;
+}
 
 async function syncMediationGroup(app: AdmobAppPayload, placementId: string, format: AdFormat, adUnitIds: string[]) {
-    const mediationGroupName = stringifyMediationGroupName({ appId: app.appId, placementId, format })
-    const mediationGroups = await admob.listMediationGroups()
-    const mediationGroup = mediationGroups.find(x => x.name === mediationGroupName)
-    if (mediationGroup) {
-        consola.info('Updating mediation group', mediationGroup.id)
-        // const result = await admob.updateMediationGroup(mediationGroup.id, {
-        //     adUnitIds,
-        // })
-        // consola.success('Updated mediation group', result)
-    } else {
-        consola.info('Creating mediation group', mediationGroupName)
-        const adSources: AdSourceInput[] = Object.values(adSourceData)
-            .filter(x => x.isBidding && !x.mappingRequired && !!x.partnership[app.platform]?.[format])
-            .map(x => ({ id: x.id }))
-        console.log('Found adSources', adSources.length)
 
-        const config = getAppConfig(app.appId)
-        if (config.adSources?.applovin) {
-            try {
-                const adaptar = adSourceData[AdSource.Applovin].partnership[app.platform]?.[format]
-                if (adaptar) {
-                    console.log('Updating applovin mediation allocation')
-                    const allocations = await admob.updateMediationAllocation(
-                        adUnitIds,
-                        adSourceData[AdSource.Applovin].partnership![app.platform]![format]!,
-                        config.adSources.applovin
-                    )
-                    adSources.push({
-                        id: AdSource.Applovin,
-                        allocations: allocations,
-                    })
-                    console.log('Added applovin ad source')
-                }
-            } catch (e) {
-                if (e instanceof Error) {
-                    consola.fail("Failed to add applovin to ad sources.", e.message)
-                }
+    const adSources: AdSourceInput[] = Object.values(adSourceData)
+        .filter(x => x.isBidding && !x.mappingRequired && !!x.partnership[app.platform]?.[format])
+        .map(x => ({ id: x.id }))
+    console.log('Found adSources', adSources.length)
+
+    const config = getAppConfig(app.appId)
+    if (config.adSources?.applovin) {
+        try {
+            const adaptar = adSourceData[AdSource.Applovin].partnership[app.platform]?.[format]
+            if (adaptar) {
+                console.log('Updating applovin mediation allocation')
+                const allocations = await admob.updateMediationAllocation(
+                    adUnitIds,
+                    adSourceData[AdSource.Applovin].partnership![app.platform]![format]!,
+                    config.adSources.applovin
+                )
+                adSources.push({
+                    id: AdSource.Applovin,
+                    allocations: allocations,
+                })
+                console.log('Added applovin ad source')
+            }
+        } catch (e) {
+            if (e instanceof Error) {
+                consola.fail("Failed to add applovin to ad sources.", e.message)
             }
         }
+    }
+
+    const mediationGroupNameParts = <MediationGroupNameParts>{ appId: app.appId, placementId, format }
+    const mediationGroupName = stringifyMediationGroupName(mediationGroupNameParts)
+    const mediationGroups = await admob.listMediationGroups()
+    const mediationGroup = mediationGroups.find(x =>
+        deepEquals(parseMediationGroupName(x.name), mediationGroupNameParts)
+    )
+
+    if (mediationGroup) {
+        consola.info('Updating mediation group', mediationGroup.id)
+        await admob.updateMediationGroup(mediationGroup.id, {
+            name: mediationGroupName,
+            platform: app.platform,
+            format: format,
+            adUnitIds,
+            adSources: adSources
+        })
+        consola.success('Updated mediation group')
+    } else {
+        consola.info('Creating mediation group', mediationGroupName)
 
         // if (adSources.length) {
         await admob.createMediationGroup({
@@ -177,10 +220,6 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
             adSources: adSources
         })
         consola.success('Created mediation group')
-        // } else {
-        //     consola.info('No ad sources.')
-
-        // }
     }
 }
 
