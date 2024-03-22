@@ -188,6 +188,7 @@ const rbMeditionGroupsIndexed = chain(rbMeditionGroups)
 //     adSources: adSourcesInput
 // })
 // consola.log('Created mediation group', mediationGroup)
+
 interface SyncPayload<S, T, K> {
     create: S[]
     update: Map<K, T>
@@ -263,9 +264,7 @@ for (const app of selectedApps) {
             console.info(' update', [...update.values()].map(x => parseAdUnitName(x.name).ecpmFloor))
             console.info(' remove', remove)
 
-            const resultAdUnits = {
-                ...update
-            }
+            const resultAdUnits = Object.fromEntries(update.entries()) as Record<number, AdUnit>
             // if (create.length === 0 && update.length === 0 && remove.length === 0) {
             //     consola.info('No changes')
             // }
@@ -288,7 +287,7 @@ for (const app of selectedApps) {
                         }
                     })
                     consola.success('Created ad unit', adUnit.adUnitId)
-                    resultAdUnits.set(ecpmFloor, adUnit)
+                    resultAdUnits[ecpmFloor] = adUnit
                 } catch (e) {
                     if (e instanceof Error && e.message.includes('Insufficient Data API quota')) {
                         consola.fail('Failed to create ad unit: Insufficient Data API quota')
@@ -348,7 +347,7 @@ for (const app of selectedApps) {
 
             // commit changes to remote config
             const ecpmFloorAdUnits = {} as Record<string, string>
-            for (const [ecpm, adUnit] of resultAdUnits.entries()) {
+            for (const [ecpm, adUnit] of Object.entries(resultAdUnits)) {
                 const publicAdUnitId = await admob.getPublicAdUnitId(adUnit.adUnitId)
                 ecpmFloorAdUnits[ecpm] = publicAdUnitId
                 consola.info(`  ECPM ${ecpm} => ${publicAdUnitId}`)
