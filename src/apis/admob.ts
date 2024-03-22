@@ -2,6 +2,7 @@ import consola from 'consola'
 import { chromium, type Cookie } from 'playwright'
 import type { AdFormat, Platform } from '../base'
 import type { AdmobAuthData } from './google'
+import { ofetch, FetchError } from 'ofetch'
 export type DynamicObject = Record<string, any>
 export type EcpmFloor = {
     mode: 'Google Optimize',
@@ -35,6 +36,24 @@ function createDynamicObject<T extends object>(target: T = {} as T): DynamicObje
     return new Proxy(target, handler);
 }
 
+async function fetchAdmob(url: string, options: RequestInit) {
+    try {
+        const json = await ofetch(url, {
+            ...options,
+            responseType: 'json'
+        })
+        return json
+    } catch (e) {
+        if (e instanceof FetchError) {
+            const adMobServerException = e.data['2']
+            // message: "Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS"
+            const message = adMobServerException.match(/message: "([^"]+)"/)?.[1]
+            throw new Error('Failed to list apps: ' + message)
+        } else {
+            throw e
+        }
+    }
+}
 /**
  * ## Ad Format
  *   Rewarded interstitial
@@ -230,7 +249,7 @@ export async function getListOfAdUnits(appId: string, config: { admobAuthData: A
     const body = {
         "1": [appId]
     }
-    const response = await fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/List?authuser=1&authuser=1&authuser=1&f.sid=4269709555968964600", {
+    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/List?authuser=1&authuser=1&authuser=1&f.sid=4269709555968964600", {
         "headers": {
             "content-type": "application/x-www-form-urlencoded",
             ...admobAuthData,
@@ -238,13 +257,6 @@ export async function getListOfAdUnits(appId: string, config: { admobAuthData: A
         "body": 'f.req=' + encodeURIComponent(JSON.stringify(body)),
         "method": "POST"
     });
-    if (!response.ok) {
-        const message = await getErrorMessage(response)
-        throw new Error('Failed to get ad units: ' + message)
-    }
-
-    // const pubId = appId.split('~')[0].split('-')[3];
-    const json = await response.json() as Record<string, any>
     if (!Array.isArray(json[1]) || json[1].length === 0) {
         return [];
     }
@@ -281,7 +293,7 @@ export async function createAdUnit(options: AdUnitOptions, config: { admobAuthDa
         ecpmFloor
     })
 
-    const response = await fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/Create?authuser=1&authuser=1&authuser=1&f.sid=3583866342012525000", {
+    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/Create?authuser=1&authuser=1&authuser=1&f.sid=3583866342012525000", {
         "headers": {
             "content-type": "application/x-www-form-urlencoded",
             ...admobAuthData,
@@ -289,11 +301,6 @@ export async function createAdUnit(options: AdUnitOptions, config: { admobAuthDa
         "body": 'f.req=' + encodeURIComponent(JSON.stringify(body)),
         "method": "POST"
     });
-    if (!response.ok) {
-        const message = await getErrorMessage(response)
-        throw new Error('Failed to create ad unit: ' + message)
-    }
-    const json = await response.json() as any
     return parseAdUnitResponse(json[1])
 }
 
@@ -329,7 +336,7 @@ async function updateAdUnit(
         }
     }
 
-    const response = await fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/Update?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {
+    const response = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/Update?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {
         "headers": {
             "content-type": "application/x-www-form-urlencoded",
             ...admobAuthData,
@@ -337,10 +344,6 @@ async function updateAdUnit(
         "body": 'f.req=' + encodeURIComponent(JSON.stringify(body)),
         "method": "POST"
     });
-    if (!response.ok) {
-        const message = await getErrorMessage(response)
-        throw new Error('Failed to update ad unit: ' + message)
-    }
 }
 
 async function bulkRemoveAdUnits(adUnitIds: string[], config: { admobAuthData: AdmobAuthData }) {
@@ -350,7 +353,7 @@ async function bulkRemoveAdUnits(adUnitIds: string[], config: { admobAuthData: A
         "1": adUnitIds,
         "2": 1
     }
-    const response = await fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/BulkRemove?authuser=1&authuser=1&authuser=1&f.sid=-4819060855550730000", {
+    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/BulkRemove?authuser=1&authuser=1&authuser=1&f.sid=-4819060855550730000", {
         "headers": {
             "content-type": "application/x-www-form-urlencoded",
             ...admobHeaderData,
@@ -358,21 +361,6 @@ async function bulkRemoveAdUnits(adUnitIds: string[], config: { admobAuthData: A
         "body": 'f.req=' + encodeURIComponent(JSON.stringify(body)),
         "method": "POST"
     });
-    if (!response.ok) {
-        const message = await getErrorMessage(response)
-        throw new Error('Failed to remove ad units: ' + message)
-    }
-}
-
-// json:
-// {"2":"AdMobServerException{code\u003dCANONICAL_ERROR_RESOURCE_EXHAUSTED, message\u003dcommand_responses {\n  root_ids {\n    publisher_root_ids {\n      publisher_id: 327352636\n    }\n  }\n  status: RESOURCE_EXHAUSTED\n}\nerrors {\n  error_code: \"QUOTA_ERROR_INSUFFICIENT_QUOTA\"\n  error_details {\n    [ads.api.tangle.parameters.errordetail.ReportingJobErrorDetail.reporting_job_details] {\n      reporting_job_name: \"display-ads-tangle-coordinator-prod.server\"\n    }\n  }\n  message: \"Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS\"\n  origin: INVALID_REQUEST\n}\nstatus: RESOURCE_EXHAUSTED\nserver_event_id {\n  time_usec: 1710620448693290\n  server_ip: 78029852\n  process_id: 2735394181\n}\n}","5":429,"9":8,"10":{"514648870":{"1":{"1":13109,"2":"command_responses {\n  root_ids {\n    publisher_root_ids {\n      publisher_id: 327352636\n    }\n  }\n  status: RESOURCE_EXHAUSTED\n}\nerrors {\n  error_code: \"QUOTA_ERROR_INSUFFICIENT_QUOTA\"\n  error_details {\n    [ads.api.tangle.parameters.errordetail.ReportingJobErrorDetail.reporting_job_details] {\n      reporting_job_name: \"display-ads-tangle-coordinator-prod.server\"\n    }\n  }\n  message: \"Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS\"\n  origin: INVALID_REQUEST\n}\nstatus: RESOURCE_EXHAUSTED\nserver_event_id {\n  time_usec: 1710620448693290\n  server_ip: 78029852\n  process_id: 2735394181\n}\n"}}}}
-async function getErrorMessage(response: Response) {
-    const json = await response.json() as any
-    const adMobServerException = json['2']
-    // console.log(adMobServerException)
-    // message: "Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS"
-    const errorMessage = adMobServerException.match(/message: "([^"]+)"/)?.[1]
-    return errorMessage
 }
 
 
@@ -386,21 +374,14 @@ interface AdmobAppResult {
 }
 export async function listApps(config: { admobAuthData: AdmobAuthData }): Promise<AdmobAppResult[]> {
     const { admobAuthData } = config
-    const response = await fetch("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {
+    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {
         method: 'POST',
         headers: {
             'content-type': 'application/x-www-form-urlencoded',
             ...admobAuthData,
         },
-        body: 'f.req=' + encodeURIComponent(JSON.stringify({}))
+        body: 'f.req=' + encodeURIComponent(JSON.stringify({})),
     })
-    if (!response.ok) {
-        const message = await getErrorMessage(response)
-        throw new Error('Failed to list apps: ' + message)
-    }
-
-    const json = await response.json() as any
-    consola.log(json)
     return json[1].map((x: any) => ({
         appId: x[1],
         name: x[2],
