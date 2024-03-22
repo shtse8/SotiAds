@@ -175,10 +175,11 @@ for (const app of selectedApps) {
                     consola.success('Created ad unit', adUnit.adUnitId)
                     resultAdUnits.set(ecpmFloor, adUnit)
                 } catch (e) {
-                    consola.fail('Failed to create ad unit', e)
                     if (e instanceof Error && e.message.includes('Insufficient Data API quota')) {
-                        consola.fail(e.message)
+                        consola.fail('Failed to create ad unit: Insufficient Data API quota')
                         break;
+                    } else {
+                        consola.fail('Failed to create ad unit', e)
                     }
                 }
             }
