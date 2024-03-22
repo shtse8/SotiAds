@@ -3,7 +3,7 @@ import type { AdFormat, Platform } from "../base";
 import { refreshToken, initializeApp, getApps } from 'firebase-admin/app'
 import { getRemoteConfig, type RemoteConfigTemplate } from "firebase-admin/remote-config";
 import consola from "consola";
-import { camelCase } from 'xdash'
+import { camelCase, isEmpty } from 'xdash'
 
 type PlatformString = `${Platform}:${string}`;
 type PromiseType<T> = T extends Promise<infer R> ? R : never;
@@ -96,6 +96,21 @@ export class FirebaseManager {
     //     // return this.appFirebaseMap.get(this.createPlatformString(platform, packageName))
     // }
 
+    removeEmptyObjects(obj: Record<string, any>) {
+        for (const key in obj) {
+            if (isEmpty(obj[key])) {
+                delete obj[key]
+            } else if (typeof obj[key] === 'object') {
+                this.removeEmptyObjects(obj[key])
+            }
+        }
+        return obj
+    }
+
+    normalizeTemplate(template: RemoteConfigTemplate) {
+        this.removeEmptyObjects(template)
+    }
+
     async updateRemoteConfig(projectId: string, updater: (template: RemoteConfigTemplate) => void) {
         const app = this.useFirebaseApp(projectId)
         if (!app) {
@@ -105,6 +120,8 @@ export class FirebaseManager {
         const template = await remoteConfig.getTemplate()
         const before = JSON.stringify(template)
         updater(template)
+        // we need to remove empty objects for comparison
+        this.normalizeTemplate(template)
         const after = JSON.stringify(template)
         if (before === after) {
             consola.info('No changes')
