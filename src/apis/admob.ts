@@ -561,7 +561,6 @@ export class API {
         }
         // consola.log('body', body)
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Create?authuser=1&authuser=1&authuser=1&f.sid=2458665903996893000', body)
-        console.log('json', json)
         return this.parseMediationGroupResponse(json)
     }
 
