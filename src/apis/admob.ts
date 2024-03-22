@@ -14,6 +14,9 @@ export type EcpmFloor = {
 } | {
     mode: 'Disabled'
 }
+interface AdmobAPIConfig {
+    auth: AdmobAuthData
+}
 function createDynamicObject<T extends object>(target: T = {} as T): DynamicObject {
     const handler: ProxyHandler<T> = {
         get(target, property, receiver) {
@@ -36,15 +39,22 @@ function createDynamicObject<T extends object>(target: T = {} as T): DynamicObje
     return new Proxy(target, handler);
 }
 
-async function fetchAdmob(url: string, options: RequestInit) {
+async function fetchAdmob(url: string, body: Record<string, any> = {}, config: AdmobAPIConfig) {
+    const { auth } = config
     try {
         const json = await ofetch(url, {
-            ...options,
+            method: 'POST',
+            headers: {
+                'content-type': 'application/x-www-form-urlencoded',
+                ...auth,
+            },
+            body: 'f.req=' + encodeURIComponent(JSON.stringify(body)),
             responseType: 'json'
         })
         return json
     } catch (e) {
         if (e instanceof FetchError) {
+            consola.log(e.data)
             const adMobServerException = e.data['2']
             // message: "Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS"
             const message = adMobServerException.match(/message: "([^"]+)"/)?.[1]
@@ -243,20 +253,12 @@ export interface AdUnit {
     adFormat: AdFormat
     ecpmFloor: EcpmFloor
 }
-export async function getListOfAdUnits(appId: string, config: { admobAuthData: AdmobAuthData }) {
-    const { admobAuthData } = config
+export async function getListOfAdUnits(appId: string, config: AdmobAPIConfig) {
     // const [appIdPrefix, appIdShort] = appId.split('~')
     const body = {
         "1": [appId]
     }
-    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/List?authuser=1&authuser=1&authuser=1&f.sid=4269709555968964600", {
-        "headers": {
-            "content-type": "application/x-www-form-urlencoded",
-            ...admobAuthData,
-        },
-        "body": 'f.req=' + encodeURIComponent(JSON.stringify(body)),
-        "method": "POST"
-    });
+    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/List?authuser=1&authuser=1&authuser=1&f.sid=4269709555968964600", body, config);
     if (!Array.isArray(json[1]) || json[1].length === 0) {
         return [];
     }
@@ -281,9 +283,8 @@ interface AdUnitOptions {
     ecpmFloor: EcpmFloor
 }
 
-export async function createAdUnit(options: AdUnitOptions, config: { admobAuthData: AdmobAuthData }) {
+export async function createAdUnit(options: AdUnitOptions, config: AdmobAPIConfig) {
     const { appId, name, adFormat, frequencyCap, ecpmFloor } = options
-    const { admobAuthData } = config
     // const [appIdPrefix, appIdShort] = appId.split('~')
     const body = createBody({
         appId: appId,
@@ -293,14 +294,7 @@ export async function createAdUnit(options: AdUnitOptions, config: { admobAuthDa
         ecpmFloor
     })
 
-    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/Create?authuser=1&authuser=1&authuser=1&f.sid=3583866342012525000", {
-        "headers": {
-            "content-type": "application/x-www-form-urlencoded",
-            ...admobAuthData,
-        },
-        "body": 'f.req=' + encodeURIComponent(JSON.stringify(body)),
-        "method": "POST"
-    });
+    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/Create?authuser=1&authuser=1&authuser=1&f.sid=3583866342012525000", body, config);
     return parseAdUnitResponse(json[1])
 }
 
@@ -309,12 +303,11 @@ async function updateAdUnit(
     appId: string,
     adUnitId: string,
     options: Partial<Exclude<AdUnitOptions, 'appId'>>,
-    config: { admobAuthData: AdmobAuthData }) {
+    config: AdmobAPIConfig) {
     const { name, adFormat, frequencyCap, ecpmFloor } = options
-    const { admobAuthData } = config
 
     // get original data
-    const adUnit = await getListOfAdUnits(appId, { admobAuthData }).then(x => x.find(x => x.adUnitId === adUnitId))
+    const adUnit = await getListOfAdUnits(appId, config).then(x => x.find(x => x.adUnitId === adUnitId))
     if (!adUnit) {
         throw new Error('Ad unit not found')
     }
@@ -336,31 +329,18 @@ async function updateAdUnit(
         }
     }
 
-    const response = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/Update?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {
-        "headers": {
-            "content-type": "application/x-www-form-urlencoded",
-            ...admobAuthData,
-        },
-        "body": 'f.req=' + encodeURIComponent(JSON.stringify(body)),
-        "method": "POST"
-    });
+    const response = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/Update?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", body, config);
 }
 
-async function bulkRemoveAdUnits(adUnitIds: string[], config: { admobAuthData: AdmobAuthData }) {
-    const { admobAuthData: admobHeaderData } = config
+async function bulkRemoveAdUnits(adUnitIds: string[], config: AdmobAPIConfig) {
     // const adUnitIdsShort = adUnitIds.map(x => x.split('/').pop())
-    const body = {
-        "1": adUnitIds,
-        "2": 1
-    }
-    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/BulkRemove?authuser=1&authuser=1&authuser=1&f.sid=-4819060855550730000", {
-        "headers": {
-            "content-type": "application/x-www-form-urlencoded",
-            ...admobHeaderData,
+    const json = await fetchAdmob(
+        "https://apps.admob.com/inventory/_/rpc/AdUnitService/BulkRemove?authuser=1&authuser=1&authuser=1&f.sid=-4819060855550730000",
+        {
+            "1": adUnitIds,
+            "2": 1
         },
-        "body": 'f.req=' + encodeURIComponent(JSON.stringify(body)),
-        "method": "POST"
-    });
+        config);
 }
 
 
@@ -372,16 +352,8 @@ interface AdmobAppResult {
     packageName: string
     projectId: string
 }
-export async function listApps(config: { admobAuthData: AdmobAuthData }): Promise<AdmobAppResult[]> {
-    const { admobAuthData } = config
-    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/x-www-form-urlencoded',
-            ...admobAuthData,
-        },
-        body: 'f.req=' + encodeURIComponent(JSON.stringify({})),
-    })
+export async function listApps(config: AdmobAPIConfig): Promise<AdmobAppResult[]> {
+    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {}, config)
     return json[1].map((x: any) => ({
         appId: x[1],
         name: x[2],
@@ -392,26 +364,46 @@ export async function listApps(config: { admobAuthData: AdmobAuthData }): Promis
     }))
 }
 
+async function getPublisher(config: AdmobAPIConfig) {
+    const json = await fetchAdmob('https://apps.admob.com/publisher/_/rpc/PublisherService/Get?authuser=1&authuser=1&authuser=1&f.sid=2563678571570077000', {}, config)
+    return {
+        email: json[1][1][1],
+        publisherId: json[1][2][1]
+    }
+}
+
+function getPublicAdUnitId(publisherId: string, adUnitId: string) {
+    return `ca-app-${publisherId}/${adUnitId}`
+}
+
 export class API {
-    constructor(private admobAuthData: AdmobAuthData) { }
+    constructor(private config: AdmobAPIConfig) { }
 
-    async getListOfAdUnits(appId: string) {
-        return await getListOfAdUnits(appId, { admobAuthData: this.admobAuthData })
+    getListOfAdUnits(appId: string) {
+        return getListOfAdUnits(appId, this.config)
     }
 
-    async createAdUnit(options: AdUnitOptions) {
-        return await createAdUnit(options, { admobAuthData: this.admobAuthData })
+    createAdUnit(options: AdUnitOptions) {
+        return createAdUnit(options, this.config)
     }
 
-    async updateAdUnit(appId: string, adUnitId: string, options: Partial<AdUnitOptions>) {
-        return await updateAdUnit(appId, adUnitId, options, { admobAuthData: this.admobAuthData })
+    updateAdUnit(appId: string, adUnitId: string, options: Partial<AdUnitOptions>) {
+        return updateAdUnit(appId, adUnitId, options, this.config)
     }
 
-    async bulkRemoveAdUnits(adUnitIds: string[]) {
-        return await bulkRemoveAdUnits(adUnitIds, { admobAuthData: this.admobAuthData })
+    bulkRemoveAdUnits(adUnitIds: string[]) {
+        return bulkRemoveAdUnits(adUnitIds, this.config)
     }
 
-    async listApps() {
-        return await listApps({ admobAuthData: this.admobAuthData })
+    listApps() {
+        return listApps(this.config)
+    }
+
+    getPublisher() {
+        return getPublisher(this.config);
+    }
+
+    static getPublicAdUnitId(publisherId: string, adUnitId: string) {
+        return getPublicAdUnitId(publisherId, adUnitId)
     }
 }

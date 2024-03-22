@@ -7,7 +7,6 @@ import { FirebaseManager } from './apis/firebase'
 import { getAdmobAuthData, getAuthTokens } from './apis/google'
 
 const authData = await getAdmobAuthData()
-const admob = new API(authData.admobAuthData)
 
 const tokens = await getAuthTokens({
     cookies: authData.googleAuthData.cookies,
@@ -37,6 +36,11 @@ await firebaseManager.init()
 //     process.exit(0)
 // }
 
+const admob = new API({
+    auth: authData.admobAuthData
+})
+const publisher = await admob.getPublisher()
+consola.info('Publisher', publisher)
 consola.info('Fetching apps')
 const apps = await admob.listApps()
 // consola.info('apps', apps)
@@ -216,7 +220,7 @@ for (const app of selectedApps) {
             consola.success('Successfully updated ad units')
 
             // commit changes to remote config
-            const ecpmFloorAdUnits = mapValues(Object.fromEntries(resultAdUnits), x => `ca-app-pub-7587088496225646/${x.adUnitId}`)
+            const ecpmFloorAdUnits = mapValues(Object.fromEntries(resultAdUnits), x => API.getPublicAdUnitId(publisher.publisherId, x.adUnitId))
             // print ecpm floor ad units
             for (const [ecpm, adUnitId] of Object.entries(ecpmFloorAdUnits)) {
                 consola.info(`  ECPM ${ecpm} => ${adUnitId}`)
