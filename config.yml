@@ -33,7 +33,7 @@ default:
 
 apps:
   6975353685:
-    mediations:
+    adSources:
       meta:
         placements:
           default:

@@ -1,8 +1,14 @@
 import consola from 'consola'
-import { chromium, type Cookie } from 'playwright'
+import { chromium } from 'playwright-extra'
 import type { AdFormat, Platform } from '../base'
-import type { AdmobAuthData } from './google'
+import type { AdmobAuthData, AuthData } from './google'
+import stealth from 'puppeteer-extra-plugin-stealth'
 import { ofetch, FetchError } from 'ofetch'
+import { camelCase, difference, groupBy, isArray, mapValues, type PromiseResultType, type UnwrapPromise } from 'xdash'
+import { string } from 'valibot'
+import { bindSelf, cacheFunc, snakeCase } from 'xdash'
+
+
 export type DynamicObject = Record<string, any>
 export type EcpmFloor = {
     mode: 'Google Optimize',
@@ -207,28 +213,67 @@ interface AdmobPublisher {
     publisherId: string
 }
 
+// 0 - 0000
+// 1 - 0001
+// 2 - 0010
+// 5 - 0101
+// 8 - 1000
 const formatIdMap: Record<number, AdFormat> = {
     0: 'Banner',
     1: 'Interstitial',
     5: 'Rewarded',
     8: 'RewardedInterstitial'
 }
+const formatIdReverseMap: Partial<Record<AdFormat, number>> = Object.fromEntries(Object.entries(formatIdMap).map(([k, v]) => [v, k])) as any
+
 const platformIdMap: Record<number, Platform> = {
     1: 'iOS',
     2: 'Android'
 }
+const platformIdReverseMap: Partial<Record<Platform, number>> = Object.fromEntries(Object.entries(platformIdMap).map(([k, v]) => [v, k])) as any
+
+type AdSourceConfig = Partial<Record<Platform, Partial<Record<AdFormat, AdSourceAdapter>>>>
+
+interface AdSourceAdapter {
+    id: string,
+    adSourceId: string,
+    fields: string[]
+}
+
+interface AdSourceData {
+    id: string,
+    name: string,
+    // versioning applied here, get the last item
+    partnership: AdSourceConfig
+    // waterfall related
+    supportOptimisation: boolean,
+    waterfallPartnership: Record<string, string>,
+    supportOptimisation2: boolean,
+    isBidding: boolean,
+    mappingRequired: boolean,
+
+}
+
+export interface AdSourceInput {
+    id: string,
+    allocationId?: string,
+}
+
+export interface AloocationPayload {
+    id: string,
+}
 export class API {
-    private publisher: AdmobPublisher | undefined
-    constructor(private config: AdmobAPIConfig) { }
+    constructor(private config: AuthData) { }
 
     async getPublicAdUnitId(adUnitId: string) {
         const publisher = await this.getPublisher()
         return `ca-app-${publisher.publisherId}/${adUnitId}`
     }
 
-    async fetch(url: string, body: Record<string, any> = {}) {
-        const { auth } = this.config
+    async fetch(url: string, body: any = {}) {
+        const { admobAuthData: auth } = this.config
         try {
+            consola.log('body', encodeURIComponent(JSON.stringify(body)))
             const json = await ofetch(url, {
                 method: 'POST',
                 headers: {
@@ -238,7 +283,11 @@ export class API {
                 body: 'f.req=' + encodeURIComponent(JSON.stringify(body)),
                 responseType: 'json'
             })
-            return json
+            const { 1: data, 2: error } = json
+            if (error) {
+                throw new Error(JSON.stringify(error))
+            }
+            return data
         } catch (e) {
             if (e instanceof FetchError) {
                 // consola.log(e.data)
@@ -246,10 +295,11 @@ export class API {
                     const adMobServerException = e.data['2']
                     // message: "Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS"
                     const message = adMobServerException.match(/message: "([^"]+)"/)?.[1]
-                    throw new Error('Failed to list apps: ' + message)
+                    throw new Error('Failed to fetch: ' + message)
                 } catch (e) {
                     if (e instanceof Error) {
-                        throw new Error('Failed to list apps: ' + e.message)
+                        consola.error('Failed to fetch: ' + e.message, url, body)
+                        throw new Error('Failed to fetch: ' + e.message)
                     }
                 }
             } else {
@@ -315,11 +365,11 @@ export class API {
             "1": [appId]
         }
         const json = await this.fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/List?authuser=1&authuser=1&authuser=1&f.sid=4269709555968964600", body);
-        if (!Array.isArray(json[1]) || json[1].length === 0) {
+        if (!Array.isArray(json) || json.length === 0) {
             return [];
         }
         const result = [] as AdUnit[];
-        for (const entry of json[1]) {
+        for (const entry of json) {
             const adUnit = this.parseAdUnitResponse(entry)
             result.push(adUnit)
         }
@@ -338,7 +388,7 @@ export class API {
         })
 
         const json = await this.fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/Create?authuser=1&authuser=1&authuser=1&f.sid=3583866342012525000", body);
-        return this.parseAdUnitResponse(json[1])
+        return this.parseAdUnitResponse(json)
     }
 
     // body: f.req: {"1":{"1":"8767339703","2":"1598902297","3":"cubeage/gameEnd/ecpm/6","9":false,"11":false,"14":1,"15":true,"16":[0,1,2],"17":false,"21":false,"22":{},"23":{"1":3,"3":{"1":{"1":"1000000","2":"USD"}}},"27":{"1":1}},"2":{"1":["cpm_floor_settings"]}}
@@ -381,39 +431,343 @@ export class API {
             });
     }
 
-    async listApps() {
+    async listApps(): Promise<AdmobAppResult[]> {
         const json = await this.fetch("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000")
-        return json[1].map((x: any) => ({
+        return json.map((x: any) => (<AdmobAppResult>{
             appId: x[1],
             name: x[2],
             platform: x[3] == 1 ? 'iOS' : 'Android',
             status: x[19] ? 'Inactive' : 'Active',
             packageName: x[22],
             projectId: x?.[23]?.[2]?.[1]
-        } as AdmobAppResult))
+        }))
     }
 
-    async getPublisher() {
-        if (this.publisher) {
-            return this.publisher
-        }
+    private getPublisher = cacheFunc(bindSelf(this)._getPublisher)
+    async _getPublisher() {
         const json = await this.fetch('https://apps.admob.com/publisher/_/rpc/PublisherService/Get?authuser=1&authuser=1&authuser=1&f.sid=2563678571570077000')
-        this.publisher = {
-            email: json[1][1][1],
-            publisherId: json[1][2][1]
+        return {
+            email: json[1][1],
+            publisherId: json[2][1]
         }
-        return this.publisher
     }
 
-    async getMediationGroups() {
+    parseMediationGroupResponse(response: any) {
+        return {
+            id: response[1],
+            name: response[2],
+            platform: platformIdMap[response[4][1]],
+            format: formatIdMap[response[4][2]],
+            adUnitIds: response[4][3] || [] as string[]
+        }
+    }
+    async listMediationGroups() {
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/List?authuser=1&authuser=1&authuser=1&f.sid=-2500048687334755000')
-        return json[1].map((x: any) => {
-            return ({
-                id: x[1],
-                name: x[2],
-                platform: platformIdMap[x[4][1]],
-                format: formatIdMap[x[4][2]],
-            })
+        const result = [] as any[]
+        for (const entry of json) {
+            if (entry[1] === "0") {
+                // we don't need admob default network
+                continue;
+            }
+            result.push(this.parseMediationGroupResponse(entry))
+        }
+        return result
+    }
+
+    // {"1":"cubeage/[appid]/[platform]/[placement]/[format]","2":1,"3":{"1":2,"2":1,"3":["7023861009","6137655985","7450737654","5199058969","3738637639","7469999081","8763819327","1076900999","6512140634","2389982664","3456277041","7825222309","8342606364","1760778342","3073860019","9138303971","1904356376","7029524690","9655688034","3217438048","2842867673","4317932578","1112474290","5631014241","2425555965","1175273226","6782112687","9463228294","6298843050","4106690332","7355939703","8669021375","8039030632","2897819940","1776309966","7611924729","9352112305","4210901619","2978275641","5523983289","3672679713","5271867690","6837064958","3089391633","8150146629","2526849508","1665193972","4985761385","6628363157","4402473305"]},"4":[{"2":"1","3":1,"4":1,"5":{"1":"10000","2":"USD"},"6":false,"9":"AdMob Network","11":1,"14":"1"}]}
+    async createMediationGroup(options: {
+        name: string
+        platform: Platform
+        format: AdFormat
+        adUnitIds: string[],
+        adSources: AdSourceInput[]
+    }) {
+        const { name, platform, format, adUnitIds, adSources } = options
+        // const list = await this.listAdSources()
+        const adSourceData = await this.getAdSourceData()
+        const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Create?authuser=1&authuser=1&authuser=1&f.sid=2458665903996893000', {
+            1: name,
+            2: 1,
+            3: {
+                1: 2,
+                2: 1,
+                3: adUnitIds
+            },
+            4: [
+                {
+                    2: AdSource.AdmobNetwork,
+                    3: 1,
+                    4: 1,
+                    5: {
+                        1: "10000",
+                        2: 'USD'
+                    },
+                    6: false,
+                    9: adSourceData[AdSource.AdmobNetwork].name,
+                    11: 1,
+                    14: '1'
+                },
+                ...adSources.map((x) => ({
+                    2: x.id,
+                    3: 6,
+                    4: 1,
+                    5: {
+                        1: "10000",
+                        2: 'USD'
+                    },
+                    6: false,
+                    9: adSourceData[x.id].name,
+                    11: 1,
+                    13: x.allocationId ? [
+                        x.allocationId
+                    ] : undefined,  // allocation ids
+                    14: '1'
+                }))
+                //     {
+                //     2: "1",
+                //     3: 1,
+                //     4: 1,
+                //     5: {
+                //         1: "10000",
+                //         2: 'USD'
+                //     },
+                //     6: false,
+                //     9: 'AdMob Network',
+                //     11: 1,
+                //     14: '1'
+                // }
+            ]
+        })
+        return this.parseMediationGroupResponse(json)
+    }
+
+    async deleteMediationGroups(ids: string[]) {
+        const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/BulkStatusChange?authuser=1&authuser=1&authuser=1&f.sid=-4151608546174543400', {
+            1: ids,
+            // 1 - enable
+            // 2 - pause
+            // 3 - remove
+            2: 3
         })
     }
+
+    async listAdSources(): Promise<AdSource[]> {
+        const json = await this.fetch('https://apps.admob.com/adSource/_/rpc/AdSourceService/ListAdSourceConfigurations?authuser=1&authuser=1&authuser=1&f.sid=5939125256556344000', {
+            1: false
+        })
+        const adSourceData = await this.getAdSourceData()
+        return json.map((x: any) => ({
+            id: x[1],
+            name: adSourceData[x[1]].name,
+            status: adSourceStatusMap[x[2]] || AdSourceStatus.NotAvailable,
+            data: x
+        }))
+    }
+
+
+    async updateMediationAllocation(adUnitId: string, adapter: AdSourceAdapter, data: Record<string, string>): Promise<AloocationPayload> {
+        const adSourceData = await this.getAdSourceData()
+        // validate input
+        const inputFields = Object.keys(data).map(camelCase)
+        const requiredFields = adapter.fields.map(camelCase)
+        const missingFields = difference(requiredFields, inputFields)
+        if (missingFields.length > 0) {
+            throw new Error('Missing fields: ' + missingFields.join(', '))
+        }
+        const json = await this.fetch('https://apps.admob.com/mediationAllocation/_/rpc/MediationAllocationService/Update?authuser=1&authuser=1&authuser=1&f.sid=2153727026438702600', {
+            1: [{
+                1: "-1",
+                3: adapter.adSourceId,
+                4: Object.entries(data).map(([k, v]) => ({
+                    1: camelCase(k),
+                    2: v
+                })),
+                12: adUnitId,
+                15: "",
+                16: adapter.id,
+            }],
+            2: [],
+        })
+        /*
+        [
+            {
+                "1": "9952063278640290",
+                "2": true,
+                "3": "395",
+                "4": [
+                    {
+                        "1": "appid",
+                        "2": "1234"
+                    },
+                    {
+                        "1": "placementid",
+                        "2": "1234"
+                    }
+                ],
+                "5": {
+                    "1": {
+                        "1": "-2",
+                        "2": "XXX"
+                    }
+                },
+                "7": false,
+                "9": false,
+                "10": 6,
+                "11": "1711108683809",
+                "12": "8219263534",
+                "15": "",
+                "16": "479"
+            }
+        ]
+        */
+        return <AloocationPayload>{
+            id: json[0][1],
+        }
+    }
+
+    readonly getPageData = cacheFunc(bindSelf(this)._getPageData)
+    async _getPageData() {
+        const { cookies } = this.config.googleAuthData
+        chromium.use(stealth())
+        const browser = await chromium.launch({ headless: true })
+        const page = await browser.newPage()
+        const context = page.context()
+        await context.addCookies(cookies)
+        // consola.info('Going to authUrl', )
+        await page.goto('https://apps.admob.com/v2/home')
+        // execute js
+        // @ts-ignore
+        const result = await page.evaluate(() => amrpd);
+        const json = JSON.parse(result)
+        await browser.close()
+        return json
+    }
+
+    readonly getAdSourceData = cacheFunc(bindSelf(this)._getAdSourceData)
+    async _getAdSourceData(): Promise<Record<string, AdSourceData>> {
+        const pageData = await this.getPageData()
+        const adSources = {} as Record<string, any>
+        function createAdapters(adSourceId: string, config: any): AdSourceConfig {
+            if (!config) {
+                return {}
+            }
+            return mapValues(
+                groupBy(
+                    config,
+                    (x: any) => platformIdMap[x[1]]
+                ),
+                (x: any) => mapValues(
+                    groupBy(
+                        x,
+                        (x: any) => adSourceFormatMap[x[3]]
+                    )
+                    , x => {
+                        const firstEntry = x[0]
+                        return (<AdSourceAdapter>{
+                            id: firstEntry[4],
+                            adSourceId: adSourceId,
+                            fields: firstEntry[2]?.map((x: any) => x[1]) || []
+                        })
+                    }
+                )
+            )
+        }
+        for (const adSource of pageData[10][1]) {
+            const id = adSource[1]
+            adSources[id] = <AdSourceData>{
+                id: id,
+                name: adSource[2],
+                // versioning applied here, get the last item
+                partnership: createAdapters(id, adSource[3]),
+                // waterfall related
+                supportOptimisation: adSource[4],
+                waterfallPartnership: adSource[5] && isArray(adSource[5]) ? Object.fromEntries(adSource[5].map((x: any) => [x[1], x[2]])) : undefined,
+                supportOptimisation2: adSource[6],
+                isBidding: adSource[8],
+                mappingRequired: adSource[9] == 1,
+                unknown: adSource[10],
+                // data: adSource
+            }
+        }
+        return adSources
+    }
+}
+
+// 3 - rewarded
+// 4 - native
+// 5 - banner
+// 6 - interstitial
+// 7 - rewarded interstitial
+// Meta - 3, 4, 5, 6, 7
+// Liftoff - 3, 5, 6, 7
+// Applovin - 3, 6
+// AdColony - 3, 5, 6 
+const adSourceFormatMap: Record<number, AdFormat> = {
+    3: 'Rewarded',
+    4: 'Native',
+    5: 'Banner',
+    6: 'Interstitial',
+    7: 'RewardedInterstitial'
+}
+
+
+// interface AdSource {
+//     id: string,
+//     name: AdSourceName,
+//     status: AdSourceStatus
+// }
+
+export enum AdSourceStatus {
+    NotAvailable,
+    Idle,
+    Pending,
+    Active,
+    StartedAgreement,
+    Rejected,
+}
+const adSourceStatusMap: Record<number, AdSourceStatus> = {
+    0: AdSourceStatus.NotAvailable,
+    1: AdSourceStatus.Idle,
+    2: AdSourceStatus.Pending,
+    3: AdSourceStatus.Active,
+    4: AdSourceStatus.StartedAgreement,
+    5: AdSourceStatus.Rejected,
+}
+const adSourceStatusReverseMap: Record<AdSourceStatus, number> = Object.fromEntries(Object.entries(adSourceStatusMap).map(([k, v]) => [v, k])) as any
+
+export enum AdSource {
+    AdmobNetwork = "1",
+    AdGeneration = "104",
+    AdColony = "84",
+    Applovin = "85",
+    ChocolatePlatform = "101",
+    EMX = "396",
+    Equativ = "111",
+    Fluct = "94",
+    ImproveDigital = "95",
+    IndexExchange = "71",
+    InMobiExchange = "118",
+    LiftoffMobile = "82",
+    MediaNet = "103",
+    MetaAudienceNetwork = "88",
+    Mintegral = "403",
+    Mobfox = "110",
+    OneTagExchange = "397",
+    OpenX = "75",
+    Pangle = "395",
+    PubMatic = "93",
+    Rubicon = "86",
+    Sharethrough = "108",
+    Smaato = "70",
+    Sonobi = "107",
+    Tapjoy = "81",
+    UnrulyX = "92",
+    VerveGroup = "404",
+    Yieldmo = "106",
+    YieldOne = "109",
+}
+
+interface AdSourcePangleConfig {
+    placementId: string
+    appId: string
 }

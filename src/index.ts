@@ -1,7 +1,7 @@
 import consola from 'consola'
-import { API, type AdUnit } from './apis/admob'
+import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource } from './apis/admob'
 import { chain, groupBy, mapValues, $op, filter, camelCase, pascalCase } from 'xdash'
-import type { AdFormat } from './base'
+import type { AdFormat, Platform } from './base'
 import { getAppConfig, getConfiguredApps } from './read'
 import { FirebaseManager } from './apis/firebase'
 import { getAdmobAuthData, getAuthTokens } from './apis/google'
@@ -36,12 +36,11 @@ await firebaseManager.init()
 //     process.exit(0)
 // }
 
-const admob = new API({
-    auth: authData.admobAuthData
-})
-const publisher = await admob.getPublisher()
-consola.info('Publisher', publisher)
-consola.info('Fetching apps')
+const admob = new API(authData)
+// const publisher = await admob.getPublisher()
+// consola.info('Publisher', publisher)
+// consola.info('Fetching apps')
+
 const apps = await admob.listApps()
 // consola.info('apps', apps)
 const configuredApps = getConfiguredApps()
@@ -82,6 +81,11 @@ interface AdUnitNameParts {
     format: AdFormat
     ecpmFloor: number
 }
+
+function stringifyAdUnitName(options: AdUnitNameParts): string {
+    return `cubeage/${camelCase(options.placementId)}/${camelCase(options.format)}/${options.ecpmFloor.toFixed(2)}`
+}
+
 function parseAdUnitName(name: string): AdUnitNameParts {
     const parts = name.split('/')
     return {
@@ -91,14 +95,95 @@ function parseAdUnitName(name: string): AdUnitNameParts {
     }
 }
 
-function stringifyAdUnitName(options: AdUnitNameParts): string {
-    return `cubeage/${camelCase(options.placementId)}/${camelCase(options.format)}/${options.ecpmFloor}`
+interface MediationGroupNameParts {
+    appId: string
+
+    placementId: string
+    format: AdFormat
+}
+
+function stringifyMediationGroupName(options: MediationGroupNameParts): string {
+    return `cubeage/${options.appId}/${camelCase(options.placementId)}/${camelCase(options.format)}`
+}
+
+function parseMediationGroupName(name: string): MediationGroupNameParts {
+    const parts = name.split('/')
+    return {
+        appId: parts[1],
+        placementId: parts[2],
+        format: parts[3] as AdFormat,
+    }
 }
 
 function toAdFormat(format: string): AdFormat {
     return pascalCase(format) as AdFormat
 }
 
+const appId = "6975353685"
+const platform: Platform = 'Android'
+const placement = 'default'
+const format: AdFormat = 'Interstitial'
+const adUnitId = "8219263534"
+const config = getAppConfig(appId)
+console.log(config)
+
+const applovin = config.adSources
+console.log(applovin)
+const adSourceData = await admob.getAdSourceData()
+
+const adSourcesInput: AdSourceInput[] = Object.values(adSourceData)
+    .filter(x => x.isBidding && !x.mappingRequired && !!x.partnership[platform]?.[format])
+    .map(x => ({ id: x.id }))
+if (config.adSources?.applovin) {
+    const allocation = await admob.updateMediationAllocation(
+        adUnitId,
+        adSourceData[AdSource.Applovin].partnership![platform]![format]!,
+        config.adSources.applovin
+    )
+    console.log("allocation", allocation)
+    adSourcesInput.push({
+        id: AdSource.Applovin,
+        allocationId: allocation.id,
+    })
+}
+console.log(adSourcesInput.length)
+
+const mediationGroups = await admob.listMediationGroups()
+const rbMeditionGroups = mediationGroups.filter(x => x.name.startsWith('cubeage/'))
+const rbMeditionGroupsIndexed = chain(rbMeditionGroups)
+    .pipe(
+        $op(groupBy)(x => parseMediationGroupName(x.name).appId),
+        $op(mapValues)(x => chain(x)
+            .pipe(
+                $op(groupBy)(x => parseMediationGroupName(x.name).placementId),
+                $op(mapValues)(x => chain(x)
+                    .pipe(
+                        $op(groupBy)(x => parseMediationGroupName(x.name).format)
+                    )
+                    .value()
+                )
+            )
+            .value()
+        )
+    )
+    .value()
+
+// for (const app of selectedApps) {
+//     const appMediationGroups = rbMeditionGroupsIndexed[app.appId] || {}
+
+// }
+// console.log(rbMeditionGroupsIndexed)
+
+// const mediationGroup = await admob.createMediationGroup({
+//     name: 'cubeage/interstitial/' + Date.now(),
+//     platform: platform,
+//     format: format,
+//     adUnitIds: [
+//         adUnitId,
+//     ],
+//     adSources: adSourcesInput
+// })
+// consola.log('Created mediation group', mediationGroup)
 for (const app of selectedApps) {
     const appConfig = getAppConfig(app.appId!)
     const allAdUnits = await admob.getListOfAdUnits(app.appId)
