@@ -4,7 +4,7 @@ import type { AdFormat, Platform } from '../base'
 import type { AdmobAuthData, AuthData } from './google'
 import stealth from 'puppeteer-extra-plugin-stealth'
 import { ofetch, FetchError } from 'ofetch'
-import { camelCase, difference, groupBy, isArray, mapValues, type PromiseResultType, type UnwrapPromise } from 'xdash'
+import { camelCase, difference, groupBy, inlineSwitch, isArray, mapValues, type PromiseResultType, type UnwrapPromise } from 'xdash'
 import { string } from 'valibot'
 import { bindSelf, cacheFunc, snakeCase } from 'xdash'
 
@@ -198,7 +198,7 @@ interface AdUnitOptions {
     ecpmFloor: EcpmFloor
 }
 
-interface AdmobAppResult {
+export interface AdmobAppPayload {
     appId: string
     name: string
     platform: Platform
@@ -254,12 +254,16 @@ interface AdSourceData {
 
 }
 
-export interface AdSourceInput {
+export interface AllocationInput {
     id: string,
-    allocationId?: string,
 }
 
-export interface AloocationPayload {
+export interface AdSourceInput {
+    id: string,
+    allocations?: AllocationInput[],
+}
+
+export interface AllocationPayload {
     id: string,
 }
 
@@ -300,17 +304,10 @@ export class API {
         } catch (e) {
             if (e instanceof FetchError) {
                 // consola.log(e.data)
-                try {
-                    const adMobServerException = e.data['2']
-                    // message: "Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS"
-                    const message = adMobServerException.match(/message: "([^"]+)"/)?.[1]
-                    throw new Error('Failed to fetch: ' + message)
-                } catch (e) {
-                    if (e instanceof Error) {
-                        // consola.error('Failed to fetch: ' + e.message, url, body)
-                        throw new Error('Failed to fetch: ' + e.message)
-                    }
-                }
+                const adMobServerException = e.data['2']
+                // message: "Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS"
+                const message = adMobServerException.match(/message: "([^"]+)"/)?.[1]
+                throw new Error('Failed to fetch: ' + message)
             } else {
                 throw e
             }
@@ -451,9 +448,9 @@ export class API {
             });
     }
 
-    async listApps(): Promise<AdmobAppResult[]> {
+    async listApps(): Promise<AdmobAppPayload[]> {
         const json = await this.fetch("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000")
-        return json.map((x: any) => (<AdmobAppResult>{
+        return json.map((x: any) => (<AdmobAppPayload>{
             appId: x[1],
             name: x[2],
             platform: x[3] == 1 ? 'iOS' : 'Android',
@@ -505,12 +502,15 @@ export class API {
         const { name, platform, format, adUnitIds, adSources } = options
         // const list = await this.listAdSources()
         const adSourceData = await this.getAdSourceData()
-        const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Create?authuser=1&authuser=1&authuser=1&f.sid=2458665903996893000', {
+        const body = {
             1: name,
             2: 1,
             3: {
                 1: 2,
-                2: 1,
+                2: inlineSwitch(format)
+                    .case('Interstitial', () => 1)
+                    .case('Rewarded', () => 5)
+                    .execute(),
                 3: adUnitIds
             },
             4: [
@@ -529,7 +529,10 @@ export class API {
                 },
                 ...adSources.map((x) => ({
                     2: x.id,
-                    3: 6,
+                    3: inlineSwitch(format)
+                        .case('Interstitial', () => 6)
+                        .case('Rewarded', () => 3)
+                        .execute(),
                     4: 1,
                     5: {
                         1: "10000",
@@ -538,9 +541,7 @@ export class API {
                     6: false,
                     9: adSourceData[x.id].name,
                     11: 1,
-                    13: x.allocationId ? [
-                        x.allocationId
-                    ] : undefined,  // allocation ids
+                    13: x.allocations?.map(x => x.id),  // allocation ids
                     14: '1'
                 }))
                 //     {
@@ -557,7 +558,10 @@ export class API {
                 //     14: '1'
                 // }
             ]
-        })
+        }
+        // consola.log('body', body)
+        const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Create?authuser=1&authuser=1&authuser=1&f.sid=2458665903996893000', body)
+        console.log('json', json)
         return this.parseMediationGroupResponse(json)
     }
 
@@ -585,8 +589,7 @@ export class API {
     }
 
 
-    async updateMediationAllocation(adUnitId: string, adapter: AdSourceAdapter, data: Record<string, string>): Promise<AloocationPayload> {
-        const adSourceData = await this.getAdSourceData()
+    async updateMediationAllocation(adUnitIds: string[], adapter: AdSourceAdapter, data: Record<string, string>): Promise<AllocationPayload[]> {
         // validate input
         const inputFields = Object.keys(data).map(camelCase)
         const requiredFields = adapter.fields.map(camelCase)
@@ -594,18 +597,19 @@ export class API {
         if (missingFields.length > 0) {
             throw new Error('Missing fields: ' + missingFields.join(', '))
         }
+
         const json = await this.fetch('https://apps.admob.com/mediationAllocation/_/rpc/MediationAllocationService/Update?authuser=1&authuser=1&authuser=1&f.sid=2153727026438702600', {
-            1: [{
+            1: adUnitIds.map(x => ({
                 1: "-1",
                 3: adapter.adSourceId,
                 4: Object.entries(data).map(([k, v]) => ({
                     1: camelCase(k),
                     2: v
                 })),
-                12: adUnitId,
+                12: x,
                 15: "",
                 16: adapter.id,
-            }],
+            })),
             2: [],
         })
         /*
@@ -640,9 +644,9 @@ export class API {
             }
         ]
         */
-        return <AloocationPayload>{
-            id: json[0][1],
-        }
+        return json.map((x: any) => (<AllocationPayload>{
+            id: x[1],
+        }))
     }
 
     readonly getPageData = cacheFunc(bindSelf(this)._getPageData)

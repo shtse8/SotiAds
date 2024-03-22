@@ -1,5 +1,5 @@
 import consola from 'consola'
-import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource } from './apis/admob'
+import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload } from './apis/admob'
 import { chain, groupBy, mapValues, $op, filter, camelCase, pascalCase } from 'xdash'
 import type { AdFormat, Platform } from './base'
 import { getAppConfig, getConfiguredApps } from './read'
@@ -123,71 +123,170 @@ function toAdFormat(format: string): AdFormat {
     return pascalCase(format) as AdFormat
 }
 
-const appId = "6975353685"
-const platform: Platform = 'Android'
-const placement = 'default'
-const format: AdFormat = 'Interstitial'
-const adUnitId = "8219263534"
-const config = getAppConfig(appId)
-console.log(config)
 
-const applovin = config.adSources
-console.log(applovin)
 const adSourceData = await admob.getAdSourceData()
 
-// const adSourcesInput: AdSourceInput[] = Object.values(adSourceData)
-//     .filter(x => x.isBidding && !x.mappingRequired && !!x.partnership[platform]?.[format])
-//     .map(x => ({ id: x.id }))
-// if (config.adSources?.applovin) {
-//     const allocation = await admob.updateMediationAllocation(
-//         adUnitId,
-//         adSourceData[AdSource.Applovin].partnership![platform]![format]!,
-//         config.adSources.applovin
-//     )
-//     console.log("allocation", allocation)
-//     adSourcesInput.push({
-//         id: AdSource.Applovin,
-//         allocationId: allocation.id,
-//     })
-// }
-// console.log(adSourcesInput.length)
 
-const mediationGroups = await admob.listMediationGroups()
-const rbMeditionGroups = mediationGroups.filter(x => x.name.startsWith('cubeage/'))
-const rbMeditionGroupsIndexed = chain(rbMeditionGroups)
-    .pipe(
-        $op(groupBy)(x => parseMediationGroupName(x.name).appId),
-        $op(mapValues)(x => chain(x)
-            .pipe(
-                $op(groupBy)(x => parseMediationGroupName(x.name).placementId),
-                $op(mapValues)(x => chain(x)
-                    .pipe(
-                        $op(groupBy)(x => parseMediationGroupName(x.name).format)
+async function syncMediationGroup(app: AdmobAppPayload, placementId: string, format: AdFormat, adUnitIds: string[]) {
+    const mediationGroupName = stringifyMediationGroupName({ appId: app.appId, placementId, format })
+    const mediationGroups = await admob.listMediationGroups()
+    const mediationGroup = mediationGroups.find(x => x.name === mediationGroupName)
+    if (mediationGroup) {
+        consola.info('Updating mediation group', mediationGroup.id)
+        // const result = await admob.updateMediationGroup(mediationGroup.id, {
+        //     adUnitIds,
+        // })
+        // consola.success('Updated mediation group', result)
+    } else {
+        consola.info('Creating mediation group', mediationGroupName)
+        const adSources: AdSourceInput[] = Object.values(adSourceData)
+            .filter(x => x.isBidding && !x.mappingRequired && !!x.partnership[app.platform]?.[format])
+            .map(x => ({ id: x.id }))
+        console.log('Found adSources', adSources.length)
+
+        const config = getAppConfig(app.appId)
+        if (config.adSources?.applovin) {
+            try {
+                const adaptar = adSourceData[AdSource.Applovin].partnership[app.platform]?.[format]
+                if (adaptar) {
+                    console.log('Updating applovin mediation allocation')
+                    const allocations = await admob.updateMediationAllocation(
+                        adUnitIds,
+                        adSourceData[AdSource.Applovin].partnership![app.platform]![format]!,
+                        config.adSources.applovin
                     )
-                    .value()
-                )
-            )
-            .value()
-        )
+                    adSources.push({
+                        id: AdSource.Applovin,
+                        allocations: allocations,
+                    })
+                    console.log('Added applovin ad source')
+                }
+            } catch (e) {
+                if (e instanceof Error) {
+                    consola.fail("Failed to add applovin to ad sources.", e.message)
+                }
+            }
+        }
+
+        // if (adSources.length) {
+        await admob.createMediationGroup({
+            name: mediationGroupName,
+            platform: app.platform,
+            format: format,
+            adUnitIds,
+            adSources: adSources
+        })
+        consola.success('Created mediation group')
+        // } else {
+        //     consola.info('No ad sources.')
+
+        // }
+    }
+}
+
+async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: AdFormat, ecpmFloors: number[]) {
+    const allAdUnits = await admob.getListOfAdUnits(app.appId)
+    const rbAdUnits = allAdUnits.filter(x => x.name.startsWith('cubeage/'))
+
+    const adUnits = rbAdUnits.filter(x => {
+        const parts = parseAdUnitName(x.name)
+        return parts.placementId === placementId && parts.format === format
+    })
+
+    const { create, update, remove } = sync(
+        ecpmFloors,
+        x => x,
+        adUnits,
+        x => parseAdUnitName(x.name).ecpmFloor
     )
-    .value()
+    consola.info('Changes for', placementId, format)
+    console.info(' create', create)
+    console.info(' update', [...update.values()].map(x => parseAdUnitName(x.name).ecpmFloor))
+    console.info(' remove', remove)
 
-// for (const app of selectedApps) {
-//     const appMediationGroups = rbMeditionGroupsIndexed[app.appId] || {}
+    const resultAdUnits = Object.fromEntries(update.entries()) as Record<number, AdUnit>
+    // if (create.length === 0 && update.length === 0 && remove.length === 0) {
+    //     consola.info('No changes')
+    // }
 
-// }
-// console.log(rbMeditionGroupsIndexed)
+    // process changes
 
-// const mediationGroup = await admob.createMediationGroup({
-//     name: 'cubeage/interstitial/' + Date.now(),
-//     platform: platform,
-//     format: format,
-//     adUnitIds: [
-//         adUnitId,
-//     ],
-//     adSources: adSourcesInput
-// })
-// consola.log('Created mediation group', mediationGroup)
+    // create ad units
+    for (const ecpmFloor of create) {
+        const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
+        consola.info('Creating ad unit', name)
+        try {
+            const adUnit = await admob.createAdUnit({
+                appId: app.appId!,
+                name,
+                adFormat: parseAdFormat(format),
+                ecpmFloor: {
+                    mode: 'Manual floor',
+                    value: ecpmFloor,
+                    currency: 'USD'
+                }
+            })
+            consola.success('Created ad unit', adUnit.adUnitId)
+            resultAdUnits[ecpmFloor] = adUnit
+        } catch (e) {
+            if (e instanceof Error && e.message.includes('Insufficient Data API quota')) {
+                consola.fail('Failed to create ad unit: Insufficient Data API quota')
+                break;
+            } else {
+                consola.fail('Failed to create ad unit', e)
+            }
+        }
+    }
+
+    // update ad units
+    for (const [ecpmFloor, adUnit] of update) {
+        const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
+        const needUpdates =
+            // name
+            adUnit.name !== name ||
+            // ecpm floor
+            adUnit.ecpmFloor.mode !== 'Manual floor' ||
+            adUnit.ecpmFloor.value !== ecpmFloor
+        if (!needUpdates) {
+            consola.info('No need to update ad unit', adUnit.name)
+            continue
+        }
+
+        consola.info('Updating ad unit')
+        try {
+            await admob.updateAdUnit(adUnit.appId, adUnit.adUnitId, {
+                name,
+                ecpmFloor: {
+                    mode: 'Manual floor',
+                    value: Number(ecpmFloor),
+                    currency: 'USD'
+                }
+            })
+            consola.success('Updated ad unit', adUnit.adUnitId)
+        } catch (e) {
+            if (e instanceof Error) {
+                consola.fail('Failed to update ad unit:', e.message)
+            }
+        }
+    }
+
+    // remove ad units
+    if (remove.length > 0) {
+        const removeIds = remove.map(x => x.adUnitId)
+        consola.info('Removing ad units', removeIds)
+        try {
+            await admob.bulkRemoveAdUnits(removeIds)
+            consola.success('Removed ad units', removeIds)
+        } catch (e) {
+            consola.fail('Failed to remove ad units', e)
+        }
+    }
+
+    // done
+    consola.success('Successfully updated ad units')
+
+    return resultAdUnits
+}
 
 interface SyncPayload<S, T, K> {
     create: S[]
@@ -215,152 +314,46 @@ function sync<S, T, K>(
 
 for (const app of selectedApps) {
     const appConfig = getAppConfig(app.appId!)
-    const allAdUnits = await admob.getListOfAdUnits(app.appId)
-    const rbAdUnits = allAdUnits.filter(x => x.name.startsWith('cubeage/'))
-    // create a map of ad units
-    const adUnitsMap = chain(allAdUnits)
-        .pipe(
-            $op(filter)(x => x.name.startsWith('cubeage/')),
-            $op(groupBy)(x => parseAdUnitName(x.name).placementId),
-            $op(mapValues)(x => chain(x)
-                .pipe(
-                    $op(groupBy)(x => parseAdUnitName(x.name).format),
-                    $op(mapValues)(x => chain(x)
-                        .pipe(
-                            $op(groupBy)(x => parseAdUnitName(x.name).ecpmFloor)
-                        )
-                        .value()
-                    )
-                )
-                .value()
-            )) // { placementId: { format: { ecpmFloor: AdUnit[] } } }
-        .value()
-
     consola.info('Updating ad units for', app.name)
     for (const [placementId, formats] of Object.entries(appConfig.placements || {})) {
         for (const [format, formatConfig] of Object.entries(formats)) {
             const ecpmFloors = formatConfig.ecpmFloors
-            // get all ad units for the app and see if they match the template
-            // const allAdUnits = await admobClient.accounts.adUnits.list({
-            //     parent: selectedAccount.name!,
-            // }).then(x => x.data.adUnits?.filter(adUnit => adUnit.appId === app.appId) || [])
 
-            // console.log(allAdUnits)
+            consola.info('Syncing ad units', placementId, format)
+            try {
+                const resultAdUnits = await syncAdUnits(app, placementId, toAdFormat(format), ecpmFloors)
+                consola.success('Synced ad units')
 
-            const adUnits = rbAdUnits.filter(x => {
-                const parts = parseAdUnitName(x.name)
-                return parts.placementId === placementId && parts.format === format
-            })
-            console.log(rbAdUnits)
+                // commit changes to remote config
+                const ecpmFloorAdUnits = {} as Record<string, string>
+                for (const [ecpm, adUnit] of Object.entries(resultAdUnits)) {
+                    const publicAdUnitId = await admob.getPublicAdUnitId(adUnit.adUnitId)
+                    ecpmFloorAdUnits[ecpm] = publicAdUnitId
+                    consola.info(`  ECPM ${ecpm} => ${publicAdUnitId}`)
+                }
 
-            const { create, update, remove } = sync(
-                ecpmFloors,
-                x => x,
-                adUnits,
-                x => parseAdUnitName(x.name).ecpmFloor
-            )
-            consola.info('Changes for', placementId, format)
-            console.info(' create', create)
-            console.info(' update', [...update.values()].map(x => parseAdUnitName(x.name).ecpmFloor))
-            console.info(' remove', remove)
-
-            const resultAdUnits = Object.fromEntries(update.entries()) as Record<number, AdUnit>
-            // if (create.length === 0 && update.length === 0 && remove.length === 0) {
-            //     consola.info('No changes')
-            // }
-
-            // process changes
-
-            // create ad units
-            for (const ecpmFloor of create) {
-                const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
-                consola.info('Creating ad unit', name)
+                // update mediation group
+                consola.info('Updating mediation group', placementId, format)
                 try {
-                    const adUnit = await admob.createAdUnit({
-                        appId: app.appId!,
-                        name,
-                        adFormat: parseAdFormat(format),
-                        ecpmFloor: {
-                            mode: 'Manual floor',
-                            value: ecpmFloor,
-                            currency: 'USD'
-                        }
-                    })
-                    consola.success('Created ad unit', adUnit.adUnitId)
-                    resultAdUnits[ecpmFloor] = adUnit
+                    await syncMediationGroup(app, placementId, parseAdFormat(format), Object.values(resultAdUnits).map(x => x.adUnitId))
+                    consola.success('Updated mediation group')
                 } catch (e) {
-                    if (e instanceof Error && e.message.includes('Insufficient Data API quota')) {
-                        consola.fail('Failed to create ad unit: Insufficient Data API quota')
-                        break;
-                    } else {
-                        consola.fail('Failed to create ad unit', e)
-                    }
-                }
-            }
-
-            // update ad units
-            for (const [ecpmFloor, adUnit] of update) {
-                const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
-                const needUpdates =
-                    // name
-                    adUnit.name !== name ||
-                    // ecpm floor
-                    adUnit.ecpmFloor.mode !== 'Manual floor' ||
-                    adUnit.ecpmFloor.value !== ecpmFloor
-                if (!needUpdates) {
-                    consola.info('No need to update ad unit', adUnit.name)
-                    continue
+                    consola.fail('Failed to update mediation group')
                 }
 
-                consola.info('Updating ad unit')
-                try {
-                    await admob.updateAdUnit(adUnit.appId, adUnit.adUnitId, {
-                        name,
-                        ecpmFloor: {
-                            mode: 'Manual floor',
-                            value: Number(ecpmFloor),
-                            currency: 'USD'
-                        }
-                    })
-                    consola.success('Updated ad unit', adUnit.adUnitId)
-                } catch (e) {
-                    if (e instanceof Error) {
-                        consola.fail('Failed to update ad unit:', e.message)
-                    }
-                }
+                // update remote config
+                consola.info('Updating remote config', placementId, format)
+                await firebaseManager.updateAdUnits({
+                    projectId: app.projectId,
+                    platform: app.platform,
+                    placementId: placementId,
+                    format: toAdFormat(format),
+                    ecpmFloors: ecpmFloorAdUnits
+                })
+                consola.success('Updated remote config')
+            } catch (e) {
+                consola.fail('Failed to sync ad units', e)
             }
-
-            // remove ad units
-            if (remove.length > 0) {
-                const removeIds = remove.map(x => x.adUnitId)
-                consola.info('Removing ad units', removeIds)
-                try {
-                    await admob.bulkRemoveAdUnits(removeIds)
-                    consola.success('Removed ad units', removeIds)
-                } catch (e) {
-                    consola.fail('Failed to remove ad units', e)
-                }
-            }
-
-            // done
-            consola.success('Successfully updated ad units')
-
-            // commit changes to remote config
-            const ecpmFloorAdUnits = {} as Record<string, string>
-            for (const [ecpm, adUnit] of Object.entries(resultAdUnits)) {
-                const publicAdUnitId = await admob.getPublicAdUnitId(adUnit.adUnitId)
-                ecpmFloorAdUnits[ecpm] = publicAdUnitId
-                consola.info(`  ECPM ${ecpm} => ${publicAdUnitId}`)
-            }
-            consola.info('Updating remote config', placementId, format)
-            await firebaseManager.updateAdUnits({
-                projectId: app.projectId,
-                platform: app.platform,
-                placementId: placementId,
-                format: toAdFormat(format),
-                ecpmFloors: ecpmFloorAdUnits
-            })
-            consola.success('Updated remote config')
         }
     }
 }
