@@ -39,31 +39,6 @@ function createDynamicObject<T extends object>(target: T = {} as T): DynamicObje
     return new Proxy(target, handler);
 }
 
-async function fetchAdmob(url: string, body: Record<string, any> = {}, config: AdmobAPIConfig) {
-    const { auth } = config
-    try {
-        const json = await ofetch(url, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/x-www-form-urlencoded',
-                ...auth,
-            },
-            body: 'f.req=' + encodeURIComponent(JSON.stringify(body)),
-            responseType: 'json'
-        })
-        return json
-    } catch (e) {
-        if (e instanceof FetchError) {
-            consola.log(e.data)
-            const adMobServerException = e.data['2']
-            // message: "Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS"
-            const message = adMobServerException.match(/message: "([^"]+)"/)?.[1]
-            throw new Error('Failed to list apps: ' + message)
-        } else {
-            throw e
-        }
-    }
-}
 /**
  * ## Ad Format
  *   Rewarded interstitial
@@ -135,6 +110,11 @@ function createBody(options: Partial<AdUnitOptions>) {
 
     // handle ad format
     switch (options.adFormat) {
+        case 'Banner':
+            body[1][14] = 0
+            body[1][16] = [0, 1, 2]
+            body[1][21] = true
+            break
         case 'Interstitial':
             body[1][14] = 1
             body[1][16] = [0, 1, 2]
@@ -158,11 +138,6 @@ function createBody(options: Partial<AdUnitOptions>) {
                 2: 'Reward',
                 3: true
             }
-            break
-        case 'Banner':
-            body[1][14] = 0
-            body[1][16] = [0, 1, 2]
-            body[1][21] = true
             break
         case 'AppOpen':
             body[1][14] = 7
@@ -196,80 +171,14 @@ function createBody(options: Partial<AdUnitOptions>) {
     return body.__target__
 }
 
-function parseAdUnitResponse(response: any) {
-    // handle ad format
-    let adFormat: AdFormat
-    if (response[14] == 1 && response[17] == true) {
-        adFormat = 'Rewarded'
-    } else if (response[14] == 8 && response[17] == true) {
-        adFormat = 'RewardedInterstitial'
-    } else if (response[14] == 1 && !response[17]) {
-        adFormat = 'Interstitial'
-    } else if (response[14] == 0 && response[21] == true) {
-        adFormat = 'Banner'
-    } else if (response[14] == 7 && response[15] == true) {
-        adFormat = 'AppOpen'
-    } else {
-        throw new Error('Unknown ad format: ' + JSON.stringify(response))
-    }
-
-
-    // handle ecpm floors
-    let ecpmFloor: EcpmFloor
-    switch (response[23][1]) {
-        case 1:
-            ecpmFloor = {
-                mode: 'Disabled'
-            }
-            break
-        case 2:
-            ecpmFloor = {
-                mode: 'Google Optimize',
-                level: response[23][2] === 1 ? 'High' : response[23][2] === 2 ? 'Medium' : 'Low'
-            }
-            break
-        case 3:
-            ecpmFloor = {
-                mode: 'Manual floor',
-                value: response[23][3][1][1] / 1000000,
-                currency: response[23][3][1][2]
-            }
-            break
-        default:
-            throw new Error('Unknown ecpm floor mode')
-    }
-    return {
-        adUnitId: response[1] as string,
-        appId: response[2] as string,
-        name: String(response[3]),
-        adFormat,
-        ecpmFloor,
-    } as AdUnit
-}
 export interface AdUnit {
     adUnitId: string
+    adUnitPublicId: string
     appId: string
     name: string
     adFormat: AdFormat
     ecpmFloor: EcpmFloor
 }
-export async function getListOfAdUnits(appId: string, config: AdmobAPIConfig) {
-    // const [appIdPrefix, appIdShort] = appId.split('~')
-    const body = {
-        "1": [appId]
-    }
-    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/List?authuser=1&authuser=1&authuser=1&f.sid=4269709555968964600", body, config);
-    if (!Array.isArray(json[1]) || json[1].length === 0) {
-        return [];
-    }
-    const result = [] as AdUnit[];
-    for (const entry of json[1]) {
-        const adUnit = parseAdUnitResponse(entry)
-        result.push(adUnit)
-    }
-    return result
-}
-
 
 interface AdUnitOptions {
     appId: string
@@ -283,67 +192,6 @@ interface AdUnitOptions {
     ecpmFloor: EcpmFloor
 }
 
-export async function createAdUnit(options: AdUnitOptions, config: AdmobAPIConfig) {
-    const { appId, name, adFormat, frequencyCap, ecpmFloor } = options
-    // const [appIdPrefix, appIdShort] = appId.split('~')
-    const body = createBody({
-        appId: appId,
-        name,
-        adFormat,
-        frequencyCap,
-        ecpmFloor
-    })
-
-    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/Create?authuser=1&authuser=1&authuser=1&f.sid=3583866342012525000", body, config);
-    return parseAdUnitResponse(json[1])
-}
-
-// body: f.req: {"1":{"1":"8767339703","2":"1598902297","3":"cubeage/gameEnd/ecpm/6","9":false,"11":false,"14":1,"15":true,"16":[0,1,2],"17":false,"21":false,"22":{},"23":{"1":3,"3":{"1":{"1":"1000000","2":"USD"}}},"27":{"1":1}},"2":{"1":["cpm_floor_settings"]}}
-async function updateAdUnit(
-    appId: string,
-    adUnitId: string,
-    options: Partial<Exclude<AdUnitOptions, 'appId'>>,
-    config: AdmobAPIConfig) {
-    const { name, adFormat, frequencyCap, ecpmFloor } = options
-
-    // get original data
-    const adUnit = await getListOfAdUnits(appId, config).then(x => x.find(x => x.adUnitId === adUnitId))
-    if (!adUnit) {
-        throw new Error('Ad unit not found')
-    }
-
-    // const [appIdPrefix, appIdShort] = appId.split('~')
-    const body = createBody({
-        ...adUnit,
-        name,
-        adFormat,
-        frequencyCap,
-        ecpmFloor
-    })
-
-    body[1][1] = adUnitId
-
-    if (options.ecpmFloor) {
-        body[2] = {
-            1: ["cpm_floor_settings"]
-        }
-    }
-
-    const response = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/AdUnitService/Update?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", body, config);
-}
-
-async function bulkRemoveAdUnits(adUnitIds: string[], config: AdmobAPIConfig) {
-    // const adUnitIdsShort = adUnitIds.map(x => x.split('/').pop())
-    const json = await fetchAdmob(
-        "https://apps.admob.com/inventory/_/rpc/AdUnitService/BulkRemove?authuser=1&authuser=1&authuser=1&f.sid=-4819060855550730000",
-        {
-            "1": adUnitIds,
-            "2": 1
-        },
-        config);
-}
-
-
 interface AdmobAppResult {
     appId: string
     name: string
@@ -352,58 +200,220 @@ interface AdmobAppResult {
     packageName: string
     projectId: string
 }
-export async function listApps(config: AdmobAPIConfig): Promise<AdmobAppResult[]> {
-    const json = await fetchAdmob("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", {}, config)
-    return json[1].map((x: any) => ({
-        appId: x[1],
-        name: x[2],
-        platform: x[3] == 1 ? 'iOS' : 'Android',
-        status: x[19] ? 'Inactive' : 'Active',
-        packageName: x[22],
-        projectId: x?.[23]?.[2]?.[1]
-    }))
+
+
+interface AdmobPublisher {
+    email: string
+    publisherId: string
 }
 
-async function getPublisher(config: AdmobAPIConfig) {
-    const json = await fetchAdmob('https://apps.admob.com/publisher/_/rpc/PublisherService/Get?authuser=1&authuser=1&authuser=1&f.sid=2563678571570077000', {}, config)
-    return {
-        email: json[1][1][1],
-        publisherId: json[1][2][1]
-    }
+const formatIdMap: Record<number, AdFormat> = {
+    0: 'Banner',
+    1: 'Interstitial',
+    5: 'Rewarded',
+    8: 'RewardedInterstitial'
 }
-
-function getPublicAdUnitId(publisherId: string, adUnitId: string) {
-    return `ca-app-${publisherId}/${adUnitId}`
+const platformIdMap: Record<number, Platform> = {
+    1: 'iOS',
+    2: 'Android'
 }
-
 export class API {
+    private publisher: AdmobPublisher | undefined
     constructor(private config: AdmobAPIConfig) { }
 
-    getListOfAdUnits(appId: string) {
-        return getListOfAdUnits(appId, this.config)
+    async getPublicAdUnitId(adUnitId: string) {
+        const publisher = await this.getPublisher()
+        return `ca-app-${publisher.publisherId}/${adUnitId}`
     }
 
-    createAdUnit(options: AdUnitOptions) {
-        return createAdUnit(options, this.config)
+    async fetch(url: string, body: Record<string, any> = {}) {
+        const { auth } = this.config
+        try {
+            const json = await ofetch(url, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/x-www-form-urlencoded',
+                    ...auth,
+                },
+                body: 'f.req=' + encodeURIComponent(JSON.stringify(body)),
+                responseType: 'json'
+            })
+            return json
+        } catch (e) {
+            if (e instanceof FetchError) {
+                // consola.log(e.data)
+                try {
+                    const adMobServerException = e.data['2']
+                    // message: "Insufficient Data API quota. API Clients: ADMOB_APP_MONETIZATION. Quota Errors: Quota Project: display-ads-storage, Group: ADMOB_APP_MONETIZATION-ADD-AppAdUnit-perApp, User: 327352636-1598902297, Quota status: INSUFFICIENT_TOKENS"
+                    const message = adMobServerException.match(/message: "([^"]+)"/)?.[1]
+                    throw new Error('Failed to list apps: ' + message)
+                } catch (e) {
+                    if (e instanceof Error) {
+                        throw new Error('Failed to list apps: ' + e.message)
+                    }
+                }
+            } else {
+                throw e
+            }
+        }
     }
 
-    updateAdUnit(appId: string, adUnitId: string, options: Partial<AdUnitOptions>) {
-        return updateAdUnit(appId, adUnitId, options, this.config)
+    parseAdUnitResponse(response: any) {
+        // handle ad format
+        let adFormat: AdFormat
+        if (response[14] == 1 && response[17] == true) {
+            adFormat = 'Rewarded'
+        } else if (response[14] == 8 && response[17] == true) {
+            adFormat = 'RewardedInterstitial'
+        } else if (response[14] == 1 && !response[17]) {
+            adFormat = 'Interstitial'
+        } else if (response[14] == 0 && response[21] == true) {
+            adFormat = 'Banner'
+        } else if (response[14] == 7 && response[15] == true) {
+            adFormat = 'AppOpen'
+        } else {
+            throw new Error('Unknown ad format: ' + JSON.stringify(response))
+        }
+
+
+        // handle ecpm floors
+        let ecpmFloor: EcpmFloor
+        switch (response[23][1]) {
+            case 1:
+                ecpmFloor = {
+                    mode: 'Disabled'
+                }
+                break
+            case 2:
+                ecpmFloor = {
+                    mode: 'Google Optimize',
+                    level: response[23][2] === 1 ? 'High' : response[23][2] === 2 ? 'Medium' : 'Low'
+                }
+                break
+            case 3:
+                ecpmFloor = {
+                    mode: 'Manual floor',
+                    value: response[23][3][1][1] / 1000000,
+                    currency: response[23][3][1][2]
+                }
+                break
+            default:
+                throw new Error('Unknown ecpm floor mode')
+        }
+        return {
+            adUnitId: response[1] as string,
+            appId: response[2] as string,
+            name: String(response[3]),
+            adFormat,
+            ecpmFloor,
+        } as AdUnit
     }
 
-    bulkRemoveAdUnits(adUnitIds: string[]) {
-        return bulkRemoveAdUnits(adUnitIds, this.config)
+    async getListOfAdUnits(appId: string) {
+        // const [appIdPrefix, appIdShort] = appId.split('~')
+        const body = {
+            "1": [appId]
+        }
+        const json = await this.fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/List?authuser=1&authuser=1&authuser=1&f.sid=4269709555968964600", body);
+        if (!Array.isArray(json[1]) || json[1].length === 0) {
+            return [];
+        }
+        const result = [] as AdUnit[];
+        for (const entry of json[1]) {
+            const adUnit = this.parseAdUnitResponse(entry)
+            result.push(adUnit)
+        }
+        return result
     }
 
-    listApps() {
-        return listApps(this.config)
+    async createAdUnit(options: AdUnitOptions) {
+        const { appId, name, adFormat, frequencyCap, ecpmFloor } = options
+        // const [appIdPrefix, appIdShort] = appId.split('~')
+        const body = createBody({
+            appId: appId,
+            name,
+            adFormat,
+            frequencyCap,
+            ecpmFloor
+        })
+
+        const json = await this.fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/Create?authuser=1&authuser=1&authuser=1&f.sid=3583866342012525000", body);
+        return this.parseAdUnitResponse(json[1])
     }
 
-    getPublisher() {
-        return getPublisher(this.config);
+    // body: f.req: {"1":{"1":"8767339703","2":"1598902297","3":"cubeage/gameEnd/ecpm/6","9":false,"11":false,"14":1,"15":true,"16":[0,1,2],"17":false,"21":false,"22":{},"23":{"1":3,"3":{"1":{"1":"1000000","2":"USD"}}},"27":{"1":1}},"2":{"1":["cpm_floor_settings"]}}
+    async updateAdUnit(appId: string, adUnitId: string, options: Partial<AdUnitOptions>) {
+        const { name, adFormat, frequencyCap, ecpmFloor } = options
+
+        // get original data
+        const adUnit = await this.getListOfAdUnits(appId).then(x => x.find(x => x.adUnitId === adUnitId))
+        if (!adUnit) {
+            throw new Error('Ad unit not found')
+        }
+
+        // const [appIdPrefix, appIdShort] = appId.split('~')
+        const body = createBody({
+            ...adUnit,
+            name,
+            adFormat,
+            frequencyCap,
+            ecpmFloor
+        })
+
+        body[1][1] = adUnitId
+
+        if (options.ecpmFloor) {
+            body[2] = {
+                1: ["cpm_floor_settings"]
+            }
+        }
+
+        const response = await this.fetch("https://apps.admob.com/inventory/_/rpc/AdUnitService/Update?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000", body);
     }
 
-    static getPublicAdUnitId(publisherId: string, adUnitId: string) {
-        return getPublicAdUnitId(publisherId, adUnitId)
+    async bulkRemoveAdUnits(adUnitIds: string[]) {
+        // const adUnitIdsShort = adUnitIds.map(x => x.split('/').pop())
+        const json = await this.fetch(
+            "https://apps.admob.com/inventory/_/rpc/AdUnitService/BulkRemove?authuser=1&authuser=1&authuser=1&f.sid=-4819060855550730000",
+            {
+                "1": adUnitIds,
+                "2": 1
+            });
+    }
+
+    async listApps() {
+        const json = await this.fetch("https://apps.admob.com/inventory/_/rpc/InventoryEntityCollectionService/GetApps?authuser=1&authuser=1&authuser=1&f.sid=-2228407465145415000")
+        return json[1].map((x: any) => ({
+            appId: x[1],
+            name: x[2],
+            platform: x[3] == 1 ? 'iOS' : 'Android',
+            status: x[19] ? 'Inactive' : 'Active',
+            packageName: x[22],
+            projectId: x?.[23]?.[2]?.[1]
+        } as AdmobAppResult))
+    }
+
+    async getPublisher() {
+        if (this.publisher) {
+            return this.publisher
+        }
+        const json = await this.fetch('https://apps.admob.com/publisher/_/rpc/PublisherService/Get?authuser=1&authuser=1&authuser=1&f.sid=2563678571570077000')
+        this.publisher = {
+            email: json[1][1][1],
+            publisherId: json[1][2][1]
+        }
+        return this.publisher
+    }
+
+    async getMediationGroups() {
+        const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/List?authuser=1&authuser=1&authuser=1&f.sid=-2500048687334755000')
+        return json[1].map((x: any) => {
+            return ({
+                id: x[1],
+                name: x[2],
+                platform: platformIdMap[x[4][1]],
+                format: formatIdMap[x[4][2]],
+            })
+        })
     }
 }

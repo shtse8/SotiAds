@@ -220,10 +220,11 @@ for (const app of selectedApps) {
             consola.success('Successfully updated ad units')
 
             // commit changes to remote config
-            const ecpmFloorAdUnits = mapValues(Object.fromEntries(resultAdUnits), x => API.getPublicAdUnitId(publisher.publisherId, x.adUnitId))
-            // print ecpm floor ad units
-            for (const [ecpm, adUnitId] of Object.entries(ecpmFloorAdUnits)) {
-                consola.info(`  ECPM ${ecpm} => ${adUnitId}`)
+            const ecpmFloorAdUnits = {} as Record<string, string>
+            for (const [ecpm, adUnit] of resultAdUnits.entries()) {
+                const publicAdUnitId = await admob.getPublicAdUnitId(adUnit.adUnitId)
+                ecpmFloorAdUnits[ecpm] = publicAdUnitId
+                consola.info(`  ECPM ${ecpm} => ${publicAdUnitId}`)
             }
             consola.info('Updating remote config', placementId, format)
             await firebaseManager.updateAdUnits({
