@@ -16,7 +16,7 @@ if (!tokens.access_token) {
     throw new Error('No access token')
 }
 
-console.log('tokens', tokens)
+consola.info('tokens', tokens)
 
 // update refresh token
 const firebaseManager = new FirebaseManager(tokens.access_token)
@@ -45,7 +45,7 @@ const apps = await admob.listApps()
 // consola.info('apps', apps)
 const configuredApps = getConfiguredApps()
 const selectedApps = apps.filter(x => x.projectId).filter(x => configuredApps.includes(x.appId!))
-console.log('selectedApps', selectedApps)
+consola.info('selectedApps', selectedApps)
 
 // const selectedApps = await multiselect({
 //     message: 'Select apps',
@@ -162,8 +162,11 @@ function deepEquals(a: any, b: any): b is typeof a {
 
 
 async function syncMediationGroup(app: AdmobAppPayload, placementId: string, format: AdFormat, adUnitIds: string[]) {
+    if (adUnitIds.length <= 0) {
+        return;
+    }
 
-    console.log('Syncing mediation group', placementId, format)
+    consola.info('Syncing mediation group', placementId, format)
     function validAdapter(adapter: AdSourceAdapter) {
         return adapter.platform === app.platform && adapter.format == format
     }
@@ -179,14 +182,14 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
             adapter: x.adapters.find(validAdapter)
         }))
         .filter(x => !!x.adapter)
-    console.log('Found adSources', adSources.length)
+    consola.info('Found adSources', adSources.length)
 
     const config = getAppConfig(app.appId)
     if (config.adSources?.applovin) {
         try {
             const adaptar = getAdapter(AdSource.Applovin)
             if (adaptar) {
-                console.log('Updating applovin mediation allocation')
+                consola.info('Updating applovin mediation allocation')
                 const allocations = await admob.updateMediationAllocation(
                     AdSource.Applovin,
                     adUnitIds,
@@ -198,7 +201,7 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
                     adapter: adaptar,
                     allocations: allocations,
                 })
-                console.log('Added applovin ad source')
+                consola.info('Added applovin ad source')
             }
         } catch (e) {
             if (e instanceof Error) {
@@ -212,7 +215,7 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
         try {
             const adaptar = getAdapter(AdSource.MetaAudienceNetwork)
             if (adaptar) {
-                console.log('Updating applovin mediation allocation')
+                consola.info('Updating applovin mediation allocation')
                 const allocations = await admob.updateMediationAllocation(
                     AdSource.MetaAudienceNetwork,
                     adUnitIds,
@@ -224,7 +227,7 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
                     adapter: adaptar,
                     allocations: allocations,
                 })
-                console.log('Added MetaAudienceNetwork ad source')
+                consola.info('Added MetaAudienceNetwork ad source')
             }
         } catch (e) {
             if (e instanceof Error) {
