@@ -1,7 +1,7 @@
 import consola from 'consola'
-import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload } from './apis/admob'
+import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload, type AdSourceData, type AdSourceAdapter } from './apis/admob'
 import { chain, groupBy, mapValues, $op, filter, camelCase, pascalCase } from 'xdash'
-import type { AdFormat, Platform } from './base'
+import { AdFormat, type Platform } from './base'
 import { getAppConfig, getConfiguredApps } from './read'
 import { FirebaseManager } from './apis/firebase'
 import { getAdmobAuthData, getAuthTokens } from './apis/google'
@@ -160,29 +160,43 @@ function deepEquals(a: any, b: any): b is typeof a {
     return false;
 }
 
+
 async function syncMediationGroup(app: AdmobAppPayload, placementId: string, format: AdFormat, adUnitIds: string[]) {
 
+    console.log('Syncing mediation group', placementId, format)
+    function validAdapter(adapter: AdSourceAdapter) {
+        return adapter.platform === app.platform && [AdFormat.Internal, format].includes(adapter.format)
+    }
+
+    function getAdapter(adSource: AdSource) {
+        return adSourceData[adSource].adapters.find(validAdapter)
+    }
+
+    console.log(adSourceData[AdSource.AdmobNetwork])
     const adSources: AdSourceInput[] = Object.values(adSourceData)
-        .filter(x =>
-            // always include admob network.
-            x.id === "1"
-            || (x.isBidding && !x.mappingRequired && !!x.partnership[app.platform]?.[format]))
-        .map(x => ({ id: x.id }))
+        .filter(x => x.isBidding)
+        .map(x => (<AdSourceInput>{
+            id: x.id,
+            adapter: x.adapters.find(validAdapter)
+        }))
+        .filter(x => !!x.adapter)
     console.log('Found adSources', adSources.length)
 
     const config = getAppConfig(app.appId)
     if (config.adSources?.applovin) {
         try {
-            const adaptar = adSourceData[AdSource.Applovin].partnership[app.platform]?.[format]
+            const adaptar = getAdapter(AdSource.Applovin)
             if (adaptar) {
                 console.log('Updating applovin mediation allocation')
                 const allocations = await admob.updateMediationAllocation(
+                    AdSource.Applovin,
                     adUnitIds,
-                    adSourceData[AdSource.Applovin].partnership![app.platform]![format]!,
+                    adaptar,
                     config.adSources.applovin
                 )
                 adSources.push({
                     id: AdSource.Applovin,
+                    adapter: adaptar,
                     allocations: allocations,
                 })
                 console.log('Added applovin ad source')

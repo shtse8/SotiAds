@@ -1,6 +1,6 @@
 import consola from 'consola'
 import { chromium } from 'playwright-extra'
-import type { AdFormat, Platform } from '../base'
+import { AdFormat, Platform } from '../base'
 import type { AdmobAuthData, AuthData } from './google'
 import stealth from 'puppeteer-extra-plugin-stealth'
 import { ofetch, FetchError } from 'ofetch'
@@ -213,30 +213,115 @@ interface AdmobPublisher {
     publisherId: string
 }
 
+class BiMapReversed<K, V> {
+    constructor(private map: Map<K, V>, private reverseMap: Map<V, K>) { }
+
+    get(key: V) {
+        return this.reverseMap.get(key)
+    }
+
+    delete(key: V) {
+        const value = this.reverseMap.get(key)
+        if (value === undefined) {
+            return
+        }
+        this.reverseMap.delete(key)
+        this.map.delete(value)
+    }
+
+    set(key: V, value: K) {
+        this.reverseMap.set(key, value)
+        this.map.set(value, key)
+    }
+
+    get size() {
+        return this.reverseMap.size
+    }
+
+    keys() {
+        return this.reverseMap.keys()
+    }
+
+    values() {
+        return this.reverseMap.values()
+    }
+
+    entries() {
+        return this.reverseMap.entries()
+    }
+}
+
+
+class BiMap<K, V> {
+    private map = new Map<K, V>()
+    private reverseMap = new Map<V, K>()
+    readonly reverse = new BiMapReversed(this.map, this.reverseMap)
+
+    constructor(entries?: [K, V][]) {
+        if (entries) {
+            for (const [key, value] of entries) {
+                this.set(key, value)
+            }
+        }
+    }
+
+    set(key: K, value: V) {
+        this.map.set(key, value)
+        this.reverseMap.set(value, key)
+    }
+
+    get(key: K) {
+        return this.map.get(key)
+    }
+
+    delete(key: K) {
+        const value = this.map.get(key)
+        if (value === undefined) {
+            return
+        }
+        this.map.delete(key)
+        this.reverseMap.delete(value)
+    }
+
+    get size() {
+        return this.map.size
+    }
+
+    keys() {
+        return this.map.keys()
+    }
+
+    values() {
+        return this.map.values()
+    }
+
+    toString() {
+        return Object.fromEntries(this.map.entries())
+    }
+}
+
+
 // 0 - 0000
 // 1 - 0001
 // 2 - 0010
 // 5 - 0101
 // 8 - 1000
-const formatIdMap: Record<number, AdFormat> = {
-    0: 'Banner',
-    1: 'Interstitial',
-    5: 'Rewarded',
-    8: 'RewardedInterstitial'
-}
-const formatIdReverseMap: Partial<Record<AdFormat, number>> = Object.fromEntries(Object.entries(formatIdMap).map(([k, v]) => [v, k])) as any
+const FormatIdMap = new BiMap([
+    [0, AdFormat.Banner],
+    [1, AdFormat.Interstitial],
+    [5, AdFormat.Rewarded],
+    [8, AdFormat.RewardedInterstitial]
+])
 
-const platformIdMap: Record<number, Platform> = {
-    1: 'iOS',
-    2: 'Android'
-}
-const platformIdReverseMap: Partial<Record<Platform, number>> = Object.fromEntries(Object.entries(platformIdMap).map(([k, v]) => [v, k])) as any
+const platformIdMap = new BiMap([
+    [1, Platform.iOS],
+    [2, Platform.Android]
+])
 
-type AdSourceConfig = Partial<Record<Platform, Partial<Record<AdFormat, AdSourceAdapter>>>>
-
-interface AdSourceAdapter {
+export interface AdSourceAdapter {
     id: string,
-    adSourceId: string,
+    platform: Platform,
+    format: AdFormat,
     fields: string[]
 }
 
@@ -244,7 +329,7 @@ interface AdSourceData {
     id: string,
     name: string,
     // versioning applied here, get the last item
-    partnership: AdSourceConfig
+    adapters: AdSourceAdapter[]
     // waterfall related
     supportOptimisation: boolean,
     waterfallPartnership: Record<string, string>,
@@ -260,6 +345,7 @@ export interface AllocationInput {
 
 export interface AdSourceInput {
     id: string,
+    adapter: AdSourceAdapter,
     allocations?: AllocationInput[],
 }
 
@@ -338,15 +424,15 @@ export class API {
         // handle ad format
         let adFormat: AdFormat
         if (response[14] == 1 && response[17] == true) {
-            adFormat = 'Rewarded'
+            adFormat = AdFormat.Rewarded
         } else if (response[14] == 8 && response[17] == true) {
-            adFormat = 'RewardedInterstitial'
+            adFormat = AdFormat.RewardedInterstitial
         } else if (response[14] == 1 && !response[17]) {
-            adFormat = 'Interstitial'
+            adFormat = AdFormat.Interstitial
         } else if (response[14] == 0 && response[21] == true) {
-            adFormat = 'Banner'
+            adFormat = AdFormat.Banner
         } else if (response[14] == 7 && response[15] == true) {
-            adFormat = 'AppOpen'
+            adFormat = AdFormat.AppOpen
         } else {
             throw new Error('Unknown ad format: ' + JSON.stringify(response))
         }
@@ -493,8 +579,8 @@ export class API {
         return <MediationGroupPayload>{
             id: response[1],
             name: response[2],
-            platform: platformIdMap[response[4][1]],
-            format: formatIdMap[response[4][2]],
+            platform: platformIdMap.get(response[4][1]),
+            format: FormatIdMap.get(response[4][2]),
             adUnitIds: response[4][3] || [] as string[]
             // adSources: response[5]?.map((x: any) => ({
             //     id: x[1],
@@ -525,49 +611,63 @@ export class API {
     async updateMediationGroup(id: string, options: MediationGroupInput) {
         // mediationGroup.
         const { name, platform, format, adUnitIds, adSources } = options
+        consola.log(-3)
         const adSourceData = await this.getAdSourceData()
+        consola.log(-2)
         const data = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/Get?authuser=1&authuser=1&authuser=1&f.sid=-1119854189466099600', {
             1: id
         })
 
+        consola.log(-1)
         // update name
         if (data[2] != name) {
             data[2] = name
         }
 
+        consola.log(0)
         // update ad unit ids
         if (data[4][3] != adUnitIds) {
             data[4][3] = adUnitIds
         }
 
         // update ad sources
+        consola.log(1)
         const currentAdSources = data[5]
+        consola.log(2)
         const currentAdSourceIds = currentAdSources.map((x: any) => x[2])
+        consola.log(3)
         const newAdSourceIds = adSources.map(x => x.id)
+        consola.log(4)
         const toAdd = difference(newAdSourceIds, currentAdSourceIds)
+        consola.log(5)
         const toKeep = intersection(newAdSourceIds, currentAdSourceIds)
         consola.info('toAdd', toAdd.length)
         consola.info('toKeep', toKeep.length)
         const adSourcesRequestData = [
             ...currentAdSources.filter((x: any) => toKeep.includes(x[2])),
         ]
-        for (const adSourceId of toAdd) {
-            const adSource = adSources.find(x => x.id = adSourceId)!
-            const source = adSourceData[id]
-            adSourcesRequestData.push({
-                2: adSourceId,
-                3: adSourceFormatReversedMap[format],
-                4: 1,
-                5: {
-                    1: "10000",
-                    2: 'USD'
-                },
-                6: false,
-                9: source.name,
-                11: 1,
-                13: adSource.allocations?.map(x => x.id),  // allocation ids
-                14: '1'
-            })
+        try {
+            for (const adSourceId of toAdd) {
+                const adSource = adSources.find(x => x.id === adSourceId)!
+                const source = adSourceData[adSourceId]
+
+                adSourcesRequestData.push({
+                    2: adSourceId,
+                    3: AdSourceDataIdMap.reverse.get(format),
+                    4: 1,
+                    5: {
+                        1: "10000",
+                        2: 'USD'
+                    },
+                    6: false,
+                    9: source.name,
+                    11: 1,
+                    13: adSource.allocations?.map(x => x.id),  // allocation ids
+                    14: '1'
+                })
+            }
+        } catch (e) {
+            consola.error(e)
         }
         data[5] = adSourcesRequestData
 
@@ -583,59 +683,32 @@ export class API {
         const { name, platform, format, adUnitIds, adSources } = options
         // const list = await this.listAdSources()
         const adSourceData = await this.getAdSourceData()
+        const unknownFieldValue: Partial<Record<AdFormat, number>> = {
+            [AdFormat.Interstitial]: 1,
+            [AdFormat.Rewarded]: 5,
+        }
         const body = {
             1: name,
             2: 1,
             3: {
                 1: 2,
-                2: inlineSwitch(format)
-                    .case('Interstitial', () => 1)
-                    .case('Rewarded', () => 5)
-                    .execute(),
+                2: unknownFieldValue[format],
                 3: adUnitIds
             },
-            4: [
-                {
-                    2: AdSource.AdmobNetwork,
-                    3: 1,
-                    4: 1,
-                    5: {
-                        1: "10000",
-                        2: 'USD'
-                    },
-                    6: false,
-                    9: adSourceData[AdSource.AdmobNetwork].name,
-                    11: 1,
-                    14: '1'
+            4: adSources.map((x) => ({
+                2: x.id,
+                3: AdSourceDataIdMap.reverse.get(format),
+                4: 1,
+                5: {
+                    1: "10000",
+                    2: 'USD'
                 },
-                ...adSources.map((x) => ({
-                    2: x.id,
-                    3: adSourceFormatReversedMap[format],
-                    4: 1,
-                    5: {
-                        1: "10000",
-                        2: 'USD'
-                    },
-                    6: false,
-                    9: adSourceData[x.id].name,
-                    11: 1,
-                    13: x.allocations?.map(x => x.id),  // allocation ids
-                    14: '1'
-                }))
-                //     {
-                //     2: "1",
-                //     3: 1,
-                //     4: 1,
-                //     5: {
-                //         1: "10000",
-                //         2: 'USD'
-                //     },
-                //     6: false,
-                //     9: 'AdMob Network',
-                //     11: 1,
-                //     14: '1'
-                // }
-            ]
+                6: false,
+                9: adSourceData[x.id].name,
+                11: 1,
+                13: x.allocations?.map(x => x.id),  // allocation ids
+                14: '1'
+            }))
         }
         // consola.log('body', body)
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Create?authuser=1&authuser=1&authuser=1&f.sid=2458665903996893000', body)
@@ -666,7 +739,7 @@ export class API {
     }
 
 
-    async updateMediationAllocation(adUnitIds: string[], adapter: AdSourceAdapter, data: Record<string, string>): Promise<AllocationPayload[]> {
+    async updateMediationAllocation(adSourceId: string, adUnitIds: string[], adapter: AdSourceAdapter, data: Record<string, string>): Promise<AllocationPayload[]> {
         // validate input
         const inputFields = Object.keys(data).map(camelCase)
         const requiredFields = adapter.fields.map(camelCase)
@@ -678,7 +751,7 @@ export class API {
         const json = await this.fetch('https://apps.admob.com/mediationAllocation/_/rpc/MediationAllocationService/Update?authuser=1&authuser=1&authuser=1&f.sid=2153727026438702600', {
             1: adUnitIds.map(x => ({
                 1: "-1",
-                3: adapter.adSourceId,
+                3: adSourceId,
                 4: adapter.fields.map(x => ({
                     1: x,
                     2: data[camelCase(x)] // we always use camel
@@ -748,41 +821,21 @@ export class API {
     async _getAdSourceData(): Promise<Record<string, AdSourceData>> {
         const pageData = await this.getPageData()
         const adSources = {} as Record<string, any>
-        function createAdapters(adSourceId: string, config: any): AdSourceConfig {
-            if (!config) {
-                return {}
-            }
-            return mapValues(
-                groupBy(
-                    config,
-                    (x: any) => platformIdMap[x[1]]
-                ),
-                (x: any) => mapValues(
-                    groupBy(
-                        x,
-                        (x: any) => adSourceFormatMap[x[3]]
-                    )
-                    , x => {
-                        const firstEntry = x[0]
-                        return (<AdSourceAdapter>{
-                            id: firstEntry[4],
-                            adSourceId: adSourceId,
-                            fields: firstEntry[2]?.map((x: any) => x[1]) || []
-                        })
-                    }
-                )
-            )
-        }
         for (const adSource of pageData[10][1]) {
             const id = adSource[1]
             adSources[id] = <AdSourceData>{
                 id: id,
                 name: adSource[2],
-                // versioning applied here, get the last item
-                partnership: createAdapters(id, adSource[3]),
+                // adapters
+                adapters: adSource[3]?.map((x: any) => (<AdSourceAdapter>{
+                    id: x[4],
+                    platform: platformIdMap.get(x[1]),
+                    format: AdSourceDataIdMap.get(x[3]),
+                    fields: x[2]?.map((x: any) => x[1]) || []
+                })) || [],
                 // waterfall related
                 supportOptimisation: adSource[4],
-                waterfallPartnership: adSource[5] && isArray(adSource[5]) ? Object.fromEntries(adSource[5].map((x: any) => [x[1], x[2]])) : undefined,
+                waterfallPartnership: adSource[5] && isArray(adSource[5]) ? Object.fromEntries(adSource[5].map((x: any) => [x[1], x[2]])) : [],
                 supportOptimisation2: adSource[6],
                 isBidding: adSource[8],
                 mappingRequired: adSource[9] == 1,
@@ -794,6 +847,19 @@ export class API {
     }
 }
 
+const AdSourceDataIdMap = new BiMap([
+    [1, AdFormat.Internal],
+    [3, AdFormat.Rewarded],
+    [4, AdFormat.Native],
+    [5, AdFormat.Banner],
+    [6, AdFormat.Interstitial],
+    [7, AdFormat.RewardedInterstitial],
+])
+
+function flipObject<K extends string | number, V extends string | number>(obj: Record<K, V>): Record<V, K> {
+    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [v, k]))
+}
+
 // 3 - rewarded
 // 4 - native
 // 5 - banner
@@ -803,14 +869,8 @@ export class API {
 // Liftoff - 3, 5, 6, 7
 // Applovin - 3, 6
 // AdColony - 3, 5, 6 
-const adSourceFormatMap: Record<number, AdFormat> = {
-    3: 'Rewarded',
-    4: 'Native',
-    5: 'Banner',
-    6: 'Interstitial',
-    7: 'RewardedInterstitial'
-}
-const adSourceFormatReversedMap = Object.fromEntries(Object.entries(adSourceFormatMap).map(([x, y]) => [y, x]))
+
+
 
 
 // interface AdSource {
@@ -867,9 +927,4 @@ export enum AdSource {
     VerveGroup = "404",
     Yieldmo = "106",
     YieldOne = "109",
-}
-
-interface AdSourcePangleConfig {
-    placementId: string
-    appId: string
 }

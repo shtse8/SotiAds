@@ -1,4 +1,15 @@
 
-export type AdFormat = 'Interstitial' | 'Rewarded' | 'Banner' | 'RewardedInterstitial' | 'AppOpen' | 'Native'
+export enum AdFormat {
+    Internal = 'Internal',
+    Interstitial = 'Interstitial',
+    Rewarded = 'Rewarded',
+    Banner = 'Banner',
+    RewardedInterstitial = 'RewardedInterstitial',
+    AppOpen = 'AppOpen',
+    Native = 'Native'
+}
 
-export type Platform = 'Android' | 'iOS'
+export enum Platform {
+    Android = 'Android',
+    iOS = 'iOS'
+}
