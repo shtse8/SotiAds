@@ -51,8 +51,8 @@ const metaAdSourceConfigSchema = object({
 
 const mintegralAdSourceConfigSchema = object({
     appKey: string(),
+    appId: string(),
     placements: placementsSchema(object({
-        appKey: optional(string()),
         placementId: string(),
         adUnitId: string(),
     }))
@@ -61,7 +61,6 @@ const mintegralAdSourceConfigSchema = object({
 const pangleAdSourceConfigSchema = object({
     appId: string(),
     placements: placementsSchema(object({
-        appId: optional(string()),
         placementId: string()
     }))
 })

@@ -45,7 +45,8 @@ apps:
             rewardedInterstitial:
               placementId: "1418759102224789_1470782413689124"
       mintegral:
-        appKey: "261228"
+        appId: "261228"
+        appKey: "3e34802404e2c9c72ef44be40cb7699b"
         placements:
           default:
             interstitial:

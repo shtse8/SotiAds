@@ -179,18 +179,12 @@ const ConfigMap: Partial<Record<AdSource, ConfigBuilder>> = {
     },
     [AdSource.Pangle]: (x, placement, format) => {
         const config = x.adSources[AdSource.Pangle]!
-        const placementConfig = config.placements[placement]?.[format]
-        if (!placementConfig) {
+        const data = config.placements[placement]?.[format]
+        if (!data) {
             throw new Error(`No config found for ${AdSource.Pangle} ${placement} ${format}`)
         }
-        const data = defu(
-            placementConfig,
-            {
-                appId: config.appId,
-            }
-        )
         return {
-            appid: data.appId,
+            appid: config.appId,
             placementid: data.placementId,
         }
     },
@@ -199,17 +193,14 @@ const ConfigMap: Partial<Record<AdSource, ConfigBuilder>> = {
     },
     [AdSource.Mintegral]: (x, placement, format) => {
         const config = x.adSources[AdSource.Mintegral]!
-        const placementConfig = config.placements[placement]?.[format]
-        if (!placementConfig) {
+        const data = config.placements[placement]?.[format]
+        if (!data) {
             throw new Error(`No config found for ${AdSource.Mintegral} ${placement} ${format}`)
         }
-        const data = defu(
-            placementConfig,
-            { appKey: config.appKey }
-        )
         return {
+            appId: config.appId,
+            appKey: config.appKey,
             placementId: data.placementId,
-            appKey: data.appKey,
             adUnitId: data.adUnitId,
         }
     },
