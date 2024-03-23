@@ -163,7 +163,10 @@ function deepEquals(a: any, b: any): b is typeof a {
 async function syncMediationGroup(app: AdmobAppPayload, placementId: string, format: AdFormat, adUnitIds: string[]) {
 
     const adSources: AdSourceInput[] = Object.values(adSourceData)
-        .filter(x => x.isBidding && !x.mappingRequired && !!x.partnership[app.platform]?.[format])
+        .filter(x =>
+            // always include admob network.
+            x.id === "1"
+            || (x.isBidding && !x.mappingRequired && !!x.partnership[app.platform]?.[format]))
         .map(x => ({ id: x.id }))
     console.log('Found adSources', adSources.length)
 
@@ -191,29 +194,29 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
         }
     }
 
-    if (config.adSources?.meta) {
-        // consola.info(config.adSources.meta.placements[placementId][format])
-        try {
-            const adaptar = adSourceData[AdSource.MetaAudienceNetwork].partnership[app.platform]?.[format]
-            if (adaptar) {
-                console.log('Updating applovin mediation allocation')
-                const allocations = await admob.updateMediationAllocation(
-                    adUnitIds,
-                    adSourceData[AdSource.MetaAudienceNetwork].partnership![app.platform]![format]!,
-                    config.adSources.meta.placements[placementId][format]
-                )
-                adSources.push({
-                    id: AdSource.MetaAudienceNetwork,
-                    allocations: allocations,
-                })
-                console.log('Added MetaAudienceNetwork ad source')
-            }
-        } catch (e) {
-            if (e instanceof Error) {
-                consola.fail("Failed to add MetaAudienceNetwork to ad sources.", e.message)
-            }
-        }
-    }
+    // if (config.adSources?.meta) {
+    //     // consola.info(config.adSources.meta.placements[placementId][format])
+    //     try {
+    //         const adaptar = adSourceData[AdSource.MetaAudienceNetwork].partnership[app.platform]?.[format]
+    //         if (adaptar) {
+    //             console.log('Updating applovin mediation allocation')
+    //             const allocations = await admob.updateMediationAllocation(
+    //                 adUnitIds,
+    //                 adSourceData[AdSource.MetaAudienceNetwork].partnership![app.platform]![format]!,
+    //                 config.adSources.meta.placements[placementId][format]
+    //             )
+    //             adSources.push({
+    //                 id: AdSource.MetaAudienceNetwork,
+    //                 allocations: allocations,
+    //             })
+    //             console.log('Added MetaAudienceNetwork ad source')
+    //         }
+    //     } catch (e) {
+    //         if (e instanceof Error) {
+    //             consola.fail("Failed to add MetaAudienceNetwork to ad sources.", e.message)
+    //         }
+    //     }
+    // }
     const mediationGroupNameParts = <MediationGroupNameParts>{ appId: app.appId, placementId, format }
     const mediationGroupName = stringifyMediationGroupName(mediationGroupNameParts)
     const mediationGroups = await admob.listMediationGroups()

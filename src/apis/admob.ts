@@ -546,28 +546,30 @@ export class API {
         const newAdSourceIds = adSources.map(x => x.id)
         const toAdd = difference(newAdSourceIds, currentAdSourceIds)
         const toKeep = intersection(newAdSourceIds, currentAdSourceIds)
-        if (toKeep.length != currentAdSources.length) {
-            const adSourcesRequestData = [
-                ...currentAdSources.filter((x: any) => toKeep.includes(x[2])),
-            ]
-            for (const id of toAdd) {
-                const source = adSourceData[id]
-                adSourcesRequestData.push({
-                    2: id,
-                    3: adSourceFormatReversedMap[format],
-                    4: 1,
-                    5: {
-                        1: "10000",
-                        2: 'USD'
-                    },
-                    6: false,
-                    9: source.name,
-                    11: 1,
-                    14: '1'
-                })
-            }
-            data[5] = adSourcesRequestData
+        consola.info('toAdd', toAdd.length)
+        consola.info('toKeep', toKeep.length)
+        const adSourcesRequestData = [
+            ...currentAdSources.filter((x: any) => toKeep.includes(x[2])),
+        ]
+        for (const adSourceId of toAdd) {
+            const adSource = adSources.find(x => x.id = adSourceId)!
+            const source = adSourceData[id]
+            adSourcesRequestData.push({
+                2: adSourceId,
+                3: adSourceFormatReversedMap[format],
+                4: 1,
+                5: {
+                    1: "10000",
+                    2: 'USD'
+                },
+                6: false,
+                9: source.name,
+                11: 1,
+                13: adSource.allocations?.map(x => x.id),  // allocation ids
+                14: '1'
+            })
         }
+        data[5] = adSourcesRequestData
 
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Update?authuser=1&authuser=1&authuser=1&f.sid=7739685128981884000', {
             1: data
