@@ -613,7 +613,8 @@ export class API {
         const { name, platform, format, adUnitIds, adSources } = options
         const adSourceData = await this.getAdSourceData()
         const data = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/Get?authuser=1&authuser=1&authuser=1&f.sid=-1119854189466099600', {
-            1: id
+            1: id,
+            2: false
         })
 
         // update name
@@ -622,6 +623,7 @@ export class API {
         }
 
         // update ad unit ids
+
         if (data[4][3] != adUnitIds) {
             data[4][3] = adUnitIds
         }
@@ -686,10 +688,11 @@ export class API {
         const { name, platform, format, adUnitIds, adSources } = options
         // const list = await this.listAdSources()
         const adSourceData = await this.getAdSourceData()
-        const unknownFieldValue: Partial<Record<AdFormat, number>> = {
-            [AdFormat.Interstitial]: 1,
-            [AdFormat.Rewarded]: 5,
-        }
+        const MediationGroupFormatMap = new BiMap([
+            [AdFormat.Interstitial, 1],
+            [AdFormat.Rewarded, 5],
+            [AdFormat.RewardedInterstitial, 8],
+        ])
 
         const admob = adSourceData[AdSource.AdmobNetwork]
         const admobAdapter = admob.adapters.find(x => x.platform == platform)
@@ -708,8 +711,8 @@ export class API {
             1: name,
             2: 1,
             3: {
-                1: 2,
-                2: unknownFieldValue[format],
+                1: platformIdMap.reverse.get(platform),
+                2: MediationGroupFormatMap.get(format),
                 3: adUnitIds
             },
             4: adSourcesWithAdmob.map((x) => ({
@@ -723,7 +726,7 @@ export class API {
                 6: false,
                 9: adSourceData[x.id].name,
                 11: 1,
-                // 13: x.allocations?.map(x => x.id),  // allocation ids
+                13: x.allocations?.map(x => x.id),  // allocation ids
                 14: x.adapter.id
             }))
         }
