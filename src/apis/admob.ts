@@ -630,13 +630,25 @@ export class API {
             data[4][3] = adUnitIds
         }
 
+        const admob = adSourceData[AdSource.AdmobNetwork]
+        const admobAdapter = admob.adapters.find(x => x.platform == platform)
+        if (!admobAdapter) {
+            throw new Error('Missing admob adapter.')
+        }
+        const adSourcesWithAdmob = [
+            <AdSourceInput>{
+                id: AdSource.AdmobNetwork,
+                adapter: admobAdapter,
+            },
+            ...adSources
+        ]
         // update ad sources
         consola.log(1)
         const currentAdSources = data[5]
         consola.log(2)
         const currentAdSourceIds = currentAdSources.map((x: any) => x[2])
         consola.log(3)
-        const newAdSourceIds = adSources.map(x => x.id)
+        const newAdSourceIds = adSourcesWithAdmob.map(x => x.id)
         consola.log(4)
         const toAdd = difference(newAdSourceIds, currentAdSourceIds)
         consola.log(5)
@@ -648,7 +660,7 @@ export class API {
         ]
         try {
             for (const adSourceId of toAdd) {
-                const adSource = adSources.find(x => x.id === adSourceId)!
+                const adSource = adSourcesWithAdmob.find(x => x.id === adSourceId)!
                 const source = adSourceData[adSourceId]
 
                 adSourcesRequestData.push({
@@ -663,7 +675,7 @@ export class API {
                     9: source.name,
                     11: 1,
                     13: adSource.allocations?.map(x => x.id),  // allocation ids
-                    14: '1'
+                    14: adSource.adapter.id
                 })
             }
         } catch (e) {
@@ -687,6 +699,20 @@ export class API {
             [AdFormat.Interstitial]: 1,
             [AdFormat.Rewarded]: 5,
         }
+
+        const admob = adSourceData[AdSource.AdmobNetwork]
+        const admobAdapter = admob.adapters.find(x => x.platform == platform)
+        if (!admobAdapter) {
+            throw new Error('Missing admob adapter.')
+        }
+        const adSourcesWithAdmob = [
+            <AdSourceInput>{
+                id: AdSource.AdmobNetwork,
+                adapter: admobAdapter,
+            },
+            ...adSources
+        ]
+
         const body = {
             1: name,
             2: 1,
@@ -695,7 +721,7 @@ export class API {
                 2: unknownFieldValue[format],
                 3: adUnitIds
             },
-            4: adSources.map((x) => ({
+            4: adSourcesWithAdmob.map((x) => ({
                 2: x.id,
                 3: AdSourceDataIdMap.reverse.get(format),
                 4: 1,
@@ -707,7 +733,7 @@ export class API {
                 9: adSourceData[x.id].name,
                 11: 1,
                 13: x.allocations?.map(x => x.id),  // allocation ids
-                14: '1'
+                14: x.adapter.id
             }))
         }
         // consola.log('body', body)

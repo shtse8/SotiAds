@@ -165,14 +165,13 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
 
     console.log('Syncing mediation group', placementId, format)
     function validAdapter(adapter: AdSourceAdapter) {
-        return adapter.platform === app.platform && [AdFormat.Internal, format].includes(adapter.format)
+        return adapter.platform === app.platform && adapter.format == format
     }
 
     function getAdapter(adSource: AdSource) {
         return adSourceData[adSource].adapters.find(validAdapter)
     }
 
-    console.log(adSourceData[AdSource.AdmobNetwork])
     const adSources: AdSourceInput[] = Object.values(adSourceData)
         .filter(x => x.isBidding)
         .map(x => (<AdSourceInput>{
