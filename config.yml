@@ -57,7 +57,7 @@ apps:
       pangle:
         appId: "8141816"
         placements:
-          formats:
+          default:
             interstitial:
               placementId: "980541689"
             rewarded:

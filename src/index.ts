@@ -170,25 +170,41 @@ function defu<T>(source: T, defaults: Partial<T>): T {
 type ConfigBuilder = (x: ReturnType<typeof getAppConfig>, placement: string, format: AdFormat) => any
 const ConfigMap: Partial<Record<AdSource, ConfigBuilder>> = {
     [AdSource.MetaAudienceNetwork]: (x, placement, format) => {
-        const config = x.adSources[AdSource.Pangle]!
-        return config.placements[placement]?.[format]
+        const config = x.adSources[AdSource.MetaAudienceNetwork]!
+        const placementConfig = config.placements[placement]?.[format]
+        if (!placementConfig) {
+            throw new Error(`No config found for ${AdSource.MetaAudienceNetwork} ${placement} ${format}`)
+        }
+        return placementConfig
     },
     [AdSource.Pangle]: (x, placement, format) => {
         const config = x.adSources[AdSource.Pangle]!
-        return defu(
-            config.placements[placement]?.[format],
+        const placementConfig = config.placements[placement]?.[format]
+        if (!placementConfig) {
+            throw new Error(`No config found for ${AdSource.Pangle} ${placement} ${format}`)
+        }
+        const data = defu(
+            placementConfig,
             {
                 appId: config.appId,
             }
         )
+        return {
+            appid: data.appId,
+            placementid: data.placementId,
+        }
     },
     [AdSource.Applovin]: (x) => {
         return x.adSources[AdSource.Applovin]
     },
     [AdSource.Mintegral]: (x, placement, format) => {
-        const config = x.adSources[AdSource.Pangle]!
+        const config = x.adSources[AdSource.Mintegral]!
+        const placementConfig = config.placements[placement]?.[format]
+        if (!placementConfig) {
+            throw new Error(`No config found for ${AdSource.Mintegral} ${placement} ${format}`)
+        }
         return defu(
-            config.placements[placement]?.[format],
+            placementConfig,
             {
                 appId: config.appId,
             }

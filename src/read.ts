@@ -52,6 +52,7 @@ const metaAdSourceConfigSchema = object({
 const mintegralAdSourceConfigSchema = object({
     appId: string(),
     placements: placementsSchema(object({
+        appId: optional(string()),
         placementId: string()
     }))
 })
@@ -103,7 +104,7 @@ export function getAppConfig(appId: string) {
 }
 
 // const config = getAppConfig("6975353685");
-// config.adSources[AdSource.MetaAudienceNetwork]?.placements['default'].Interstitial?.placementId
+// config.adSources[AdSource.Pangle]?.placements['default'].Interstitial?.placementId
 
 // console.dir(config, { depth: null });
 
