@@ -3,9 +3,10 @@ import type { AdFormat } from "./base";
 import {
     parse, optional, string, object, picklist, record, transform,
     fallback,
-    type BaseSchema, type Input, number, coerce, array, partial
+    type BaseSchema, type Input, number, coerce, array, partial, type ObjectSchema, type Pipe, type RecordOutput, type StringSchema, toCustom, forward, custom, type Output
 } from 'valibot';
-import { camelCase, pascalCase } from 'xdash';
+import { camelCase, mapKeys, mapValues, pascalCase } from 'xdash';
+import { AdSource } from "./apis/admob";
 
 const file = Bun.file("config.yml");
 const content = await file.text();
@@ -28,16 +29,17 @@ const adFormatSchema = transform(
         'rewardedInterstitial',
         'appOpen',
         'native'
-    ]), pascalCase);
+    ]), x => pascalCase(x) as AdFormat);
 
 const placementSchema = string();
-function placementsSchema<S extends BaseSchema>(adSourceConfigSchema: S) {
+function placementsSchema<S extends ObjectSchema<any, any>>(adSourceConfigSchema: S, pipe?: Pipe<RecordOutput<StringSchema, S>>) {
     return record(
         placementSchema,
         record(
             adFormatSchema,
             adSourceConfigSchema,
         ),
+        pipe
     )
 }
 
@@ -57,16 +59,18 @@ const mintegralAdSourceConfigSchema = object({
 const pangleAdSourceConfigSchema = object({
     appId: string(),
     placements: placementsSchema(object({
+        appId: optional(string()),
         placementId: string()
     }))
 })
+
 
 const applovinAdSourceConfigSchema = object({
     sdkKey: string(),
 })
 
 const liftoffAdSourceConfigSchema = object({
-    appId: string(),
+    appId: optional(string()),
     placements: placementsSchema(object({
         placementId: string()
     }))
@@ -76,25 +80,31 @@ const appConfigSchema = object({
     placements: optional(placementsSchema(object({
         ecpmFloors: array(number())
     })), defaultConfig.placements),
-    adSources: optional(partial(object({
-        meta: optional(metaAdSourceConfigSchema),
-        mintegral: optional(mintegralAdSourceConfigSchema),
-        pangle: optional(pangleAdSourceConfigSchema),
-        applovin: optional(applovinAdSourceConfigSchema),
-        liftoff: optional(liftoffAdSourceConfigSchema)
-    })))
-});
+    adSources: transform(partial(object({
+        meta: metaAdSourceConfigSchema,
+        mintegral: mintegralAdSourceConfigSchema,
+        pangle: pangleAdSourceConfigSchema,
+        applovin: applovinAdSourceConfigSchema,
+        liftoff: liftoffAdSourceConfigSchema
+    })), x => ({
+        [AdSource.MetaAudienceNetwork]: x.meta,
+        [AdSource.Mintegral]: x.mintegral,
+        [AdSource.Pangle]: x.pangle,
+        [AdSource.Applovin]: x.applovin,
+        [AdSource.LiftoffMobile]: x.liftoff
+    })),
+})
 
-
-export function getAppConfig(appId: string): Input<typeof appConfigSchema> {
+export function getAppConfig(appId: string) {
     if (!(appId in data.apps)) {
         throw new Error(`App with id ${appId} not found`);
     }
-    const app = data.apps[appId] ||= {};
-    return parse(appConfigSchema, app)
+    return parse(appConfigSchema, data.apps[appId] ||= {});
 }
 
-// const config = getAppConfig("7403857423");
+// const config = getAppConfig("6975353685");
+// config.adSources[AdSource.MetaAudienceNetwork]?.placements['default'].Interstitial?.placementId
+
 // console.dir(config, { depth: null });
 
 export function getConfiguredApps() {

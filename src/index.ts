@@ -1,10 +1,11 @@
 import consola from 'consola'
-import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload, type AdSourceData, type AdSourceAdapter } from './apis/admob'
+import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload, type AdSourceAdapter } from './apis/admob'
 import { chain, groupBy, mapValues, $op, filter, camelCase, pascalCase } from 'xdash'
 import { AdFormat, type Platform } from './base'
 import { getAppConfig, getConfiguredApps } from './read'
 import { FirebaseManager } from './apis/firebase'
 import { getAdmobAuthData, getAuthTokens } from './apis/google'
+import { places } from 'googleapis/build/src/apis/places'
 
 const authData = await getAdmobAuthData()
 
@@ -160,6 +161,43 @@ function deepEquals(a: any, b: any): b is typeof a {
     return false;
 }
 
+// apply default values
+function defu<T>(source: T, defaults: Partial<T>): T {
+    return Object.assign({}, defaults, source)
+
+}
+
+type ConfigBuilder = (x: ReturnType<typeof getAppConfig>, placement: string, format: AdFormat) => any
+const ConfigMap: Partial<Record<AdSource, ConfigBuilder>> = {
+    [AdSource.MetaAudienceNetwork]: (x, placement, format) => {
+        const config = x.adSources[AdSource.Pangle]!
+        return config.placements[placement]?.[format]
+    },
+    [AdSource.Pangle]: (x, placement, format) => {
+        const config = x.adSources[AdSource.Pangle]!
+        return defu(
+            config.placements[placement]?.[format],
+            {
+                appId: config.appId,
+            }
+        )
+    },
+    [AdSource.Applovin]: (x) => {
+        return x.adSources[AdSource.Applovin]
+    },
+    [AdSource.Mintegral]: (x, placement, format) => {
+        const config = x.adSources[AdSource.Pangle]!
+        return defu(
+            config.placements[placement]?.[format],
+            {
+                appId: config.appId,
+            }
+        )
+    },
+    // [AdSource.LiftoffMobile]: (x) => {
+    //     return x.adSources[AdSource.LiftoffMobile]
+    // },
+}
 
 async function syncMediationGroup(app: AdmobAppPayload, placementId: string, format: AdFormat, adUnitIds: string[]) {
     if (adUnitIds.length <= 0) {
@@ -185,56 +223,43 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
     consola.info('Found adSources', adSources.length)
 
     const config = getAppConfig(app.appId)
-    if (config.adSources?.applovin) {
+    for (const adSource of [
+        AdSource.MetaAudienceNetwork,
+        AdSource.Pangle,
+        AdSource.Applovin,
+        // AdSource.Mintegral,
+        // AdSource.LiftoffMobile
+    ] as const) {
         try {
-            const adaptar = getAdapter(AdSource.Applovin)
-            if (adaptar) {
-                consola.info('Updating applovin mediation allocation')
-                const allocations = await admob.updateMediationAllocation(
-                    AdSource.Applovin,
-                    adUnitIds,
-                    adaptar,
-                    config.adSources.applovin
-                )
-                adSources.push({
-                    id: AdSource.Applovin,
-                    adapter: adaptar,
-                    allocations: allocations,
-                })
-                consola.info('Added applovin ad source')
+            const configBuilder = ConfigMap[adSource]
+            if (!configBuilder) {
+                continue;
             }
+            const adaptar = getAdapter(adSource)
+            if (!adaptar) {
+                continue;
+            }
+
+            consola.info(`Updating ${adSource} mediation allocation`)
+            const allocations = await admob.updateMediationAllocation(
+                adSource,
+                adUnitIds,
+                adaptar,
+                configBuilder(config, placementId, format)
+            )
+            adSources.push({
+                id: adSource,
+                adapter: adaptar,
+                allocations: allocations,
+            })
+            consola.info(`Added ${adSource} ad source`)
         } catch (e) {
             if (e instanceof Error) {
-                consola.fail("Failed to add applovin to ad sources.", e.message)
+                consola.fail(`Failed to add ${adSource} to ad sources.`, e.message)
             }
         }
     }
 
-    if (config.adSources?.meta) {
-        // consola.info(config.adSources.meta.placements[placementId][format])
-        try {
-            const adaptar = getAdapter(AdSource.MetaAudienceNetwork)
-            if (adaptar) {
-                consola.info('Updating applovin mediation allocation')
-                const allocations = await admob.updateMediationAllocation(
-                    AdSource.MetaAudienceNetwork,
-                    adUnitIds,
-                    adaptar,
-                    config.adSources.meta.placements[placementId][format]
-                )
-                adSources.push({
-                    id: AdSource.MetaAudienceNetwork,
-                    adapter: adaptar,
-                    allocations: allocations,
-                })
-                consola.info('Added MetaAudienceNetwork ad source')
-            }
-        } catch (e) {
-            if (e instanceof Error) {
-                consola.fail("Failed to add MetaAudienceNetwork to ad sources.", e.message)
-            }
-        }
-    }
 
     const mediationGroupNameParts = <MediationGroupNameParts>{ appId: app.appId, placementId, format }
     const mediationGroupName = stringifyMediationGroupName(mediationGroupNameParts)
