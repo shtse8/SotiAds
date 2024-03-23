@@ -50,10 +50,11 @@ const metaAdSourceConfigSchema = object({
 })
 
 const mintegralAdSourceConfigSchema = object({
-    appId: string(),
+    appKey: string(),
     placements: placementsSchema(object({
-        appId: optional(string()),
-        placementId: string()
+        appKey: optional(string()),
+        placementId: string(),
+        adUnitId: string(),
     }))
 })
 

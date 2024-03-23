@@ -203,12 +203,15 @@ const ConfigMap: Partial<Record<AdSource, ConfigBuilder>> = {
         if (!placementConfig) {
             throw new Error(`No config found for ${AdSource.Mintegral} ${placement} ${format}`)
         }
-        return defu(
+        const data = defu(
             placementConfig,
-            {
-                appId: config.appId,
-            }
+            { appKey: config.appKey }
         )
+        return {
+            placementId: data.placementId,
+            appKey: data.appKey,
+            adUnitId: data.adUnitId,
+        }
     },
     // [AdSource.LiftoffMobile]: (x) => {
     //     return x.adSources[AdSource.LiftoffMobile]
@@ -243,7 +246,7 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
         AdSource.MetaAudienceNetwork,
         AdSource.Pangle,
         AdSource.Applovin,
-        // AdSource.Mintegral,
+        AdSource.Mintegral,
         // AdSource.LiftoffMobile
     ] as const) {
         try {
