@@ -65,6 +65,14 @@ apps:
               placementId: "980541690"
       applovin:
         sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+      liftoff:
+        appId: "659e99376cf70883bd095434"
+        placements:
+          default:
+            interstitial:
+              placementId: "INTERSTITIAL-8168483"
+            rewarded:
+              placementId: "REWARDED-5292608"
   # FMJ
   7403857423:
     adSources:
@@ -98,6 +106,14 @@ apps:
               placementId: "980510072"
       applovin:
         sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+      liftoff:
+        appId: "650d5e8c22e02a6333464475"
+        placements:
+          default:
+            interstitial:
+              placementId: "INTERSTITIAL-1380475"
+            rewarded:
+              placementId: "REWARDED-6341648"
   # 2248
   3679512360:
     adSources:
@@ -131,6 +147,14 @@ apps:
               placementId: "980995636"
       applovin:
         sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+      liftoff:
+        appId: "659e98943133fb3ba24a3a31"
+        placements:
+          default:
+            interstitial:
+              placementId: "INTERSTITIAL-8896756"
+            rewarded:
+              placementId: "REWARDED-6553992"
   #FTH
   8351595675:
     adSources:
@@ -164,6 +188,14 @@ apps:
               placementId: "980513662"
       applovin:
         sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+      liftoff:
+        appId: "659e99043133fb3ba24a3a3d"
+        placements:
+          default:
+            interstitial:
+              placementId: "INTERSTITIAL-8473172"
+            rewarded:
+              placementId: "REWARDED-8255352"
   # FBTT
   7524898468:
     adSources:
@@ -197,6 +229,14 @@ apps:
               placementId: "980513554"
       applovin:
         sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+      liftoff:
+        appId: "659e99a13133fb3ba24a3a47"
+        placements:
+          default:
+            interstitial:
+              placementId: "INTERSTITIAL-1493540"
+            rewarded:
+              placementId: "REWARDED-2108102"
   #FBT
   2773333884:
     adSources:
@@ -230,7 +270,15 @@ apps:
               placementId: "980510904"
       applovin:
         sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
-        # FSH
+      liftoff:
+        appId: "659e99c76c7debc0a6b14191"
+        placements:
+          default:
+            interstitial:
+              placementId: "INTERSTITIAL-5776401"
+            rewarded:
+              placementId: "REWARDED-7787520"
+  # FSH
   4206108122:
     adSources:
       meta:
@@ -263,3 +311,11 @@ apps:
               placementId: "980513446"
       applovin:
         sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+      liftoff:
+        appId: "659e98df3133fb3ba24a3a36"
+        placements:
+          default:
+            interstitial:
+              placementId: "INTERSTITIAL-7142914"
+            rewarded:
+              placementId: "REWARDED-8376037"

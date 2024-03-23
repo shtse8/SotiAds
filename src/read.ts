@@ -71,7 +71,7 @@ const applovinAdSourceConfigSchema = object({
 })
 
 const liftoffAdSourceConfigSchema = object({
-    appId: optional(string()),
+    appId: string(),
     placements: placementsSchema(object({
         placementId: string()
     }))

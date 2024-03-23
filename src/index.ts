@@ -204,9 +204,17 @@ const ConfigMap: Partial<Record<AdSource, ConfigBuilder>> = {
             adUnitId: data.adUnitId,
         }
     },
-    // [AdSource.LiftoffMobile]: (x) => {
-    //     return x.adSources[AdSource.LiftoffMobile]
-    // },
+    [AdSource.LiftoffMobile]: (x, placement, format) => {
+        const config = x.adSources[AdSource.LiftoffMobile]!
+        const data = config.placements[placement]?.[format]
+        if (!data) {
+            throw new Error(`No config found for ${AdSource.LiftoffMobile} ${placement} ${format}`)
+        }
+        return {
+            appid: config.appId,
+            placementId: data.placementId,
+        }
+    },
 }
 
 async function syncMediationGroup(app: AdmobAppPayload, placementId: string, format: AdFormat, adUnitIds: string[]) {
@@ -238,7 +246,7 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
         AdSource.Pangle,
         AdSource.Applovin,
         AdSource.Mintegral,
-        // AdSource.LiftoffMobile
+        AdSource.LiftoffMobile
     ] as const) {
         try {
             const configBuilder = ConfigMap[adSource]
