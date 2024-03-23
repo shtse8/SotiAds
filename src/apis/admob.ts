@@ -611,9 +611,7 @@ export class API {
     async updateMediationGroup(id: string, options: MediationGroupInput) {
         // mediationGroup.
         const { name, platform, format, adUnitIds, adSources } = options
-        consola.log(-3)
         const adSourceData = await this.getAdSourceData()
-        consola.log(-2)
         const data = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/Get?authuser=1&authuser=1&authuser=1&f.sid=-1119854189466099600', {
             1: id
         })
@@ -643,15 +641,10 @@ export class API {
             ...adSources
         ]
         // update ad sources
-        consola.log(1)
         const currentAdSources = data[5]
-        consola.log(2)
         const currentAdSourceIds = currentAdSources.map((x: any) => x[2])
-        consola.log(3)
         const newAdSourceIds = adSourcesWithAdmob.map(x => x.id)
-        consola.log(4)
         const toAdd = difference(newAdSourceIds, currentAdSourceIds)
-        consola.log(5)
         const toKeep = intersection(newAdSourceIds, currentAdSourceIds)
         consola.info('toAdd', toAdd.length)
         consola.info('toKeep', toKeep.length)
@@ -665,7 +658,7 @@ export class API {
 
                 adSourcesRequestData.push({
                     2: adSourceId,
-                    3: AdSourceDataIdMap.reverse.get(format),
+                    3: AdSourceDataIdMap.reverse.get(adSource.adapter.format),
                     4: 1,
                     5: {
                         1: "10000",
@@ -723,7 +716,7 @@ export class API {
             },
             4: adSourcesWithAdmob.map((x) => ({
                 2: x.id,
-                3: AdSourceDataIdMap.reverse.get(format),
+                3: AdSourceDataIdMap.reverse.get(x.adapter.format),
                 4: 1,
                 5: {
                     1: "10000",
@@ -732,11 +725,11 @@ export class API {
                 6: false,
                 9: adSourceData[x.id].name,
                 11: 1,
-                13: x.allocations?.map(x => x.id),  // allocation ids
+                // 13: x.allocations?.map(x => x.id),  // allocation ids
                 14: x.adapter.id
             }))
         }
-        // consola.log('body', body)
+        consola.log('body', body)
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Create?authuser=1&authuser=1&authuser=1&f.sid=2458665903996893000', body)
         return this.parseMediationGroupResponse(json)
     }
@@ -885,25 +878,6 @@ const AdSourceDataIdMap = new BiMap([
 function flipObject<K extends string | number, V extends string | number>(obj: Record<K, V>): Record<V, K> {
     return Object.fromEntries(Object.entries(obj).map(([k, v]) => [v, k]))
 }
-
-// 3 - rewarded
-// 4 - native
-// 5 - banner
-// 6 - interstitial
-// 7 - rewarded interstitial
-// Meta - 3, 4, 5, 6, 7
-// Liftoff - 3, 5, 6, 7
-// Applovin - 3, 6
-// AdColony - 3, 5, 6 
-
-
-
-
-// interface AdSource {
-//     id: string,
-//     name: AdSourceName,
-//     status: AdSourceStatus
-// }
 
 export enum AdSourceStatus {
     NotAvailable,
