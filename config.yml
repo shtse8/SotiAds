@@ -65,87 +65,201 @@ apps:
               placementId: "980541690"
       applovin:
         sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
-  # # FMJ
-  # 7403857423:
-  #   adSources:
-  #     meta:
-  #       placements:
-  #         default:
-  #           interstitial:
-  #             placementId: "752976309851096_752984416516952"
-  #           rewarded:
-  #             placementId: "752976309851096_752984459850281"
-  #           rewardedInterstitial:
-  #             placementId: "752976309851096_752984719850255"
-  #     applovin:
-  #       sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
-  # # 2248
-  # 3679512360:
-  #   adSources:
-  #     meta:
-  #       placements:
-  #         default:
-  #           interstitial:
-  #             placementId: "696230229011691_696230685678312"
-  #           rewarded:
-  #             placementId: "696230229011691_696230779011636"
-  #           rewardedInterstitial:
-  #             placementId: "696230229011691_696230835678297"
-  #     applovin:
-  #       sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
-  # #FTH
-  # 8351595675:
-  #   adSources:
-  #     meta:
-  #       placements:
-  #         default:
-  #           interstitial:
-  #             placementId: "3576085216051444_3576085306051435"
-  #           rewarded:
-  #             placementId: "3576085216051444_3576085309384768"
-  #           rewardedInterstitial:
-  #             placementId: "3576085216051444_3576085312718101"
-  #     applovin:
-  #       sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
-  # # FBTT
-  # 7524898468:
-  #   adSources:
-  #     meta:
-  #       placements:
-  #         default:
-  #           interstitial:
-  #             placementId: "995618385082824_995618441749485"
-  #           rewarded:
-  #             placementId: "995618385082824_995618445082818"
-  #           rewardedInterstitial:
-  #             placementId: "995618385082824_995618435082819"
-  #     applovin:
-  #       sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
-  # #FBT
-  # 2773333884:
-  #   adSources:
-  #     meta:
-  #       placements:
-  #         default:
-  #           interstitial:
-  #             placementId: "1314111799188044_1347844799148077"
-  #           rewarded:
-  #             placementId: "1314111799188044_1347844829148074"
-  #           rewardedInterstitial:
-  #             placementId: "1314111799188044_1347844879148069"
-  #     applovin:
-  #       sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
-  #       # FSH
-  # 4206108122:
-  #   adSources:
-  #     meta:
-  #       placements:
-  #         default:
-  #           interstitial:
-  #             placementId: "763792858778436_763793252111730"
-  #           rewarded:
-  #             placementId: "763792858778436_763793322111723"
-  #           rewardedInterstitial:
-  #             placementId: "763792858778436_763793438778378"
-  #     applovin:
-  #       sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+  # FMJ
+  7403857423:
+    adSources:
+      meta:
+        placements:
+          default:
+            interstitial:
+              placementId: "752976309851096_752984416516952"
+            rewarded:
+              placementId: "752976309851096_752984459850281"
+            rewardedInterstitial:
+              placementId: "752976309851096_752984719850255"
+      mintegral:
+        appId: "261224"
+        appKey: "3e34802404e2c9c72ef44be40cb7699b"
+        placements:
+          default:
+            interstitial:
+              placementId: "1280993"
+              adUnitId: "3040752"
+            rewarded:
+              placementId: "1280901"
+              adUnitId: "3040642"
+      pangle:
+        appId: "8136175"
+        placements:
+          default:
+            interstitial:
+              placementId: "980509957"
+            rewarded:
+              placementId: "980510072"
+      applovin:
+        sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+  # 2248
+  3679512360:
+    adSources:
+      meta:
+        placements:
+          default:
+            interstitial:
+              placementId: "696230229011691_696230685678312"
+            rewarded:
+              placementId: "696230229011691_696230779011636"
+            rewardedInterstitial:
+              placementId: "696230229011691_696230835678297"
+      mintegral:
+        appId: "261233"
+        appKey: "3e34802404e2c9c72ef44be40cb7699b"
+        placements:
+          default:
+            interstitial:
+              placementId: "1281010"
+              adUnitId: "3040770"
+            rewarded:
+              placementId: "1280929"
+              adUnitId: "3040679"
+      pangle:
+        appId: "8303246"
+        placements:
+          default:
+            interstitial:
+              placementId: "980995630"
+            rewarded:
+              placementId: "980995636"
+      applovin:
+        sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+  #FTH
+  8351595675:
+    adSources:
+      meta:
+        placements:
+          default:
+            interstitial:
+              placementId: "3576085216051444_3576085306051435"
+            rewarded:
+              placementId: "3576085216051444_3576085309384768"
+            rewardedInterstitial:
+              placementId: "3576085216051444_3576085312718101"
+      mintegral:
+        appId: "261227"
+        appKey: "3e34802404e2c9c72ef44be40cb7699b"
+        placements:
+          default:
+            interstitial:
+              placementId: "1280997"
+              adUnitId: "3040756"
+            rewarded:
+              placementId: "1280909"
+              adUnitId: "3040653"
+      pangle:
+        appId: "8141816"
+        placements:
+          default:
+            interstitial:
+              placementId: "980513661"
+            rewarded:
+              placementId: "980513662"
+      applovin:
+        sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+  # FBTT
+  7524898468:
+    adSources:
+      meta:
+        placements:
+          default:
+            interstitial:
+              placementId: "995618385082824_995618441749485"
+            rewarded:
+              placementId: "995618385082824_995618445082818"
+            rewardedInterstitial:
+              placementId: "995618385082824_995618435082819"
+      mintegral:
+        appId: "261230"
+        appKey: "3e34802404e2c9c72ef44be40cb7699b"
+        placements:
+          default:
+            interstitial:
+              placementId: "1281003"
+              adUnitId: "3040762"
+            rewarded:
+              placementId: "1280920"
+              adUnitId: "3040667"
+      pangle:
+        appId: "8136758"
+        placements:
+          default:
+            interstitial:
+              placementId: "980513553"
+            rewarded:
+              placementId: "980513554"
+      applovin:
+        sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+  #FBT
+  2773333884:
+    adSources:
+      meta:
+        placements:
+          default:
+            interstitial:
+              placementId: "1314111799188044_1347844799148077"
+            rewarded:
+              placementId: "1314111799188044_1347844829148074"
+            rewardedInterstitial:
+              placementId: "1314111799188044_1347844879148069"
+      mintegral:
+        appId: "261231"
+        appKey: "3e34802404e2c9c72ef44be40cb7699b"
+        placements:
+          default:
+            interstitial:
+              placementId: "1281005"
+              adUnitId: "3040764"
+            rewarded:
+              placementId: "1280923"
+              adUnitId: "3040671"
+      pangle:
+        appId: "8136473"
+        placements:
+          default:
+            interstitial:
+              placementId: "980510903"
+            rewarded:
+              placementId: "980510904"
+      applovin:
+        sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
+        # FSH
+  4206108122:
+    adSources:
+      meta:
+        placements:
+          default:
+            interstitial:
+              placementId: "763792858778436_763793252111730"
+            rewarded:
+              placementId: "763792858778436_763793322111723"
+            rewardedInterstitial:
+              placementId: "763792858778436_763793438778378"
+      mintegral:
+        appId: "261226"
+        appKey: "3e34802404e2c9c72ef44be40cb7699b"
+        placements:
+          default:
+            interstitial:
+              placementId: "1280995"
+              adUnitId: "3040754"
+            rewarded:
+              placementId: "1280906"
+              adUnitId: "3040649"
+      pangle:
+        appId: "8136740"
+        placements:
+          default:
+            interstitial:
+              placementId: "980513445"
+            rewarded:
+              placementId: "980513446"
+      applovin:
+        sdkKey: "Dc6GFQKFGbS4bEwWzaagGe1T7DfhKPKdRbVrhQ5BMd4b5PpSJq7RMBO8MMd7LCX26BpXQLlaQFBP8yfHFJ02Xo"
