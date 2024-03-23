@@ -616,13 +616,11 @@ export class API {
             1: id
         })
 
-        consola.log(-1)
         // update name
         if (data[2] != name) {
             data[2] = name
         }
 
-        consola.log(0)
         // update ad unit ids
         if (data[4][3] != adUnitIds) {
             data[4][3] = adUnitIds
@@ -729,7 +727,7 @@ export class API {
                 14: x.adapter.id
             }))
         }
-        consola.log('body', body)
+
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Create?authuser=1&authuser=1&authuser=1&f.sid=2458665903996893000', body)
         return this.parseMediationGroupResponse(json)
     }
