@@ -1,12 +1,13 @@
 import consola from 'consola'
 import { chromium } from 'playwright-extra'
-import { AdFormat, Platform } from '../base'
+import { AdFormat, Platform, listChanges } from '../base'
 import type { AdmobAuthData, AuthData } from './google'
 import stealth from 'puppeteer-extra-plugin-stealth'
 import { ofetch, FetchError } from 'ofetch'
 import { camelCase, difference, groupBy, inlineSwitch, isArray, mapValues, union, type PromiseResultType, type UnwrapPromise, intersection } from 'xdash'
-import { string } from 'valibot'
+import { any, string } from 'valibot'
 import { bindSelf, cacheFunc, snakeCase } from 'xdash'
+import { deepEquals } from 'bun'
 
 
 export type DynamicObject = Record<string, any>
@@ -212,6 +213,12 @@ interface AdmobPublisher {
     email: string
     publisherId: string
 }
+type CreateAllocationDataFn = (input: CreateAllocationDataInput) => Record<string, string>
+
+export interface CreateAllocationDataInput {
+    input: AdSourceInput
+    adUnitId: string
+}
 
 class BiMapReversed<K, V> {
     constructor(private map: Map<K, V>, private reverseMap: Map<V, K>) { }
@@ -339,6 +346,13 @@ interface AdSourceData {
 
 }
 
+interface AdSourcePayload {
+    id: string,
+    adSourceId: string,
+    allocations?: string[]
+    adapterId: string
+    unknown: any
+}
 export interface AllocationInput {
     id: string,
 }
@@ -346,7 +360,7 @@ export interface AllocationInput {
 export interface AdSourceInput {
     id: string,
     adapter: AdSourceAdapter,
-    allocations?: AllocationInput[],
+    // allocations?: string[],
 }
 
 export interface AllocationPayload {
@@ -359,6 +373,7 @@ export interface MediationGroupInput {
     format: AdFormat
     adUnitIds: string[]
     adSources: AdSourceInput[]
+    createAllocationData?: CreateAllocationDataFn
 }
 
 export interface MediationGroupPayload {
@@ -367,6 +382,13 @@ export interface MediationGroupPayload {
     platform: Platform
     format: AdFormat
     adUnitIds: string[]
+}
+
+interface MediationAllocationInput {
+    adSourceId: string,
+    adUnitId: string,
+    adapter: AdSourceAdapter,
+    data: Record<string, string>
 }
 
 function defu(a: any, b: any) {
@@ -608,9 +630,81 @@ export class API {
         return result
     }
 
+    // Actually we need to make sure the allocations list to be the same as ad units list
+    // to simplify the process, we only append new allocations
+    // admob will automatically remove the old ones
+    async createAdSourceRequestData(
+        input: AdSourceInput,
+        adUnitIds: string[],
+        createAllocationData?: CreateAllocationDataFn,
+        payload?: AdSourcePayload
+    ) {
+        const adSourceData = await this.getAdSourceData()
+        const adSource = adSourceData[input.id]
+
+
+        const allocations = adSource.mappingRequired
+            ? await this._createAllocations(input, adUnitIds, createAllocationData)
+            : undefined
+        return {
+            1: payload?.id,
+            2: input.id,
+            3: AdSourceDataIdMap.reverse.get(input.adapter.format),
+            4: 1,
+            5: {
+                1: "10000",
+                2: 'USD'
+            },
+            6: false,
+            // 6: payload ? undefined : false,
+            // 7: payload?.unknown,
+            9: adSource.name,
+            11: 1,
+            // 12: {
+            //     1: 0,
+            // },
+            13: payload?.allocations || allocations
+                ? [...(payload?.allocations ?? []), ...(allocations ?? [])]
+                : undefined,
+            14: input.adapter.id
+        }
+    }
+
+    async _createAllocations(
+        input: AdSourceInput,
+        adUnitIds: string[],
+        createAllocationData?: CreateAllocationDataFn
+    ) {
+        if (adUnitIds.length === 0) {
+            return []
+        }
+
+        if (!createAllocationData) {
+            throw new Error('Allocation creation function required')
+        }
+
+        consola.info('Creating allocations for ad source', input.id, 'ad units:', adUnitIds.join(','))
+        const inputs: MediationAllocationInput[] = []
+        for (const adUnitId of adUnitIds) {
+            const data = createAllocationData({
+                input: input,
+                adUnitId: adUnitId,
+            })
+            inputs.push(<MediationAllocationInput>{
+                adSourceId: input.id,
+                adUnitId: adUnitId,
+                adapter: input.adapter,
+                data: data
+            })
+        }
+
+        consola.info('Allocations created:', inputs.length)
+        return await this.updateMediationAllocation(inputs)
+    }
+
     async updateMediationGroup(id: string, options: MediationGroupInput) {
         // mediationGroup.
-        const { name, platform, format, adUnitIds, adSources } = options
+        const { name, platform, format, adUnitIds, adSources, createAllocationData } = options
         const adSourceData = await this.getAdSourceData()
         const data = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/Get?authuser=1&authuser=1&authuser=1&f.sid=-1119854189466099600', {
             1: id,
@@ -623,9 +717,21 @@ export class API {
         }
 
         // update ad unit ids
-
-        if (data[4][3] != adUnitIds) {
+        const {
+            toAdd: adUnitIdsToAdd,
+            toUpdate: adUnitIdsToUpdate,
+            toRemove: adUnitIdsToRemove
+        } = listChanges(
+            adUnitIds,
+            data[4][3] as string[] ?? []
+        )
+        consola.info('adUnitsToAdd', adUnitIdsToAdd.length)
+        consola.info('adUnitsToUpdate', adUnitIdsToUpdate.size)
+        consola.info('adUnitsToRemove', adUnitIdsToRemove.length)
+        if (adUnitIdsToAdd.length > 0 || adUnitIdsToRemove.length > 0) {
             data[4][3] = adUnitIds
+            // data[10] = {}
+            delete data[13]
         }
 
         const admob = adSourceData[AdSource.AdmobNetwork]
@@ -641,51 +747,51 @@ export class API {
             ...adSources
         ]
         // update ad sources
-        const currentAdSources = data[5]
-        const currentAdSourceIds = currentAdSources.map((x: any) => x[2])
-        const newAdSourceIds = adSourcesWithAdmob.map(x => x.id)
-        const toAdd = difference(newAdSourceIds, currentAdSourceIds)
-        const toKeep = intersection(newAdSourceIds, currentAdSourceIds)
-        consola.info('toAdd', toAdd.length)
-        consola.info('toKeep', toKeep.length)
-        const adSourcesRequestData = [
-            ...currentAdSources.filter((x: any) => toKeep.includes(x[2])),
-        ]
-        try {
-            for (const adSourceId of toAdd) {
-                const adSource = adSourcesWithAdmob.find(x => x.id === adSourceId)!
-                const source = adSourceData[adSourceId]
+        const adSourcesPayload = (data[5] as any[]).map(x => (<AdSourcePayload>{
+            id: x[1],
+            adSourceId: x[2],
+            unknown: x[7],
+            allocations: x[13],
+            adapterId: x[14],
+        }))
+        const { toAdd, toUpdate } = listChanges(
+            adSourcesWithAdmob,
+            adSourcesPayload,
+            (a, b) => a.adapter.id === b.adapterId
+        )
+        consola.info('toAdd', toAdd.map(x => x.id).join(','))
+        consola.info('toKeep', [...toUpdate.keys()].map(x => x.id).join(','))
+        const adSourcesRequestData: any[] = []
 
-                adSourcesRequestData.push({
-                    2: adSourceId,
-                    3: AdSourceDataIdMap.reverse.get(adSource.adapter.format),
-                    4: 1,
-                    5: {
-                        1: "10000",
-                        2: 'USD'
-                    },
-                    6: false,
-                    9: source.name,
-                    11: 1,
-                    13: adSource.allocations?.map(x => x.id),  // allocation ids
-                    14: adSource.adapter.id
-                })
+        for (const input of toAdd) {
+            try {
+                const data = await this.createAdSourceRequestData(input, adUnitIds, createAllocationData)
+                adSourcesRequestData.push(data)
+            } catch (e) {
+                // ignore
             }
-        } catch (e) {
-            consola.error(e)
         }
-        data[5] = adSourcesRequestData
 
+        for (const [input, payload] of toUpdate) {
+            try {
+                const data = await this.createAdSourceRequestData(input, adUnitIdsToAdd, createAllocationData, payload)
+                adSourcesRequestData.push(data)
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        data[5] = adSourcesRequestData
+        console.log(data)
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Update?authuser=1&authuser=1&authuser=1&f.sid=7739685128981884000', {
             1: data
         })
-
     }
 
 
     // {"1":"cubeage/[appid]/[platform]/[placement]/[format]","2":1,"3":{"1":2,"2":1,"3":["7023861009","6137655985","7450737654","5199058969","3738637639","7469999081","8763819327","1076900999","6512140634","2389982664","3456277041","7825222309","8342606364","1760778342","3073860019","9138303971","1904356376","7029524690","9655688034","3217438048","2842867673","4317932578","1112474290","5631014241","2425555965","1175273226","6782112687","9463228294","6298843050","4106690332","7355939703","8669021375","8039030632","2897819940","1776309966","7611924729","9352112305","4210901619","2978275641","5523983289","3672679713","5271867690","6837064958","3089391633","8150146629","2526849508","1665193972","4985761385","6628363157","4402473305"]},"4":[{"2":"1","3":1,"4":1,"5":{"1":"10000","2":"USD"},"6":false,"9":"AdMob Network","11":1,"14":"1"}]}
     async createMediationGroup(options: MediationGroupInput) {
-        const { name, platform, format, adUnitIds, adSources } = options
+        const { name, platform, format, adUnitIds, adSources, createAllocationData } = options
         // const list = await this.listAdSources()
         const adSourceData = await this.getAdSourceData()
         const MediationGroupFormatMap = new BiMap([
@@ -707,6 +813,16 @@ export class API {
             ...adSources
         ]
 
+        const adSourceRequestData: any[] = []
+        for (const input of adSourcesWithAdmob) {
+            try {
+                const data = await this.createAdSourceRequestData(input, adUnitIds, createAllocationData)
+                adSourceRequestData.push(data)
+            } catch (e) {
+                // ignore
+            }
+        }
+
         const body = {
             1: name,
             2: 1,
@@ -715,20 +831,7 @@ export class API {
                 2: MediationGroupFormatMap.get(format),
                 3: adUnitIds
             },
-            4: adSourcesWithAdmob.map((x) => ({
-                2: x.id,
-                3: AdSourceDataIdMap.reverse.get(x.adapter.format),
-                4: 1,
-                5: {
-                    1: "10000",
-                    2: 'USD'
-                },
-                6: false,
-                9: adSourceData[x.id].name,
-                11: 1,
-                13: x.allocations?.map(x => x.id),  // allocation ids
-                14: x.adapter.id
-            }))
+            4: adSourceRequestData
         }
 
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Create?authuser=1&authuser=1&authuser=1&f.sid=2458665903996893000', body)
@@ -758,65 +861,35 @@ export class API {
         }))
     }
 
-
-    async updateMediationAllocation(adSourceId: string, adUnitIds: string[], adapter: AdSourceAdapter, data: Record<string, string>): Promise<AllocationPayload[]> {
-        // validate input
-        const inputFields = Object.keys(data).map(camelCase)
-        const requiredFields = adapter.fields.map(camelCase)
+    // validate input
+    validateMediationAllocationInput(input: MediationAllocationInput) {
+        const inputFields = Object.keys(input.data).map(camelCase)
+        const requiredFields = input.adapter.fields.map(camelCase)
         const missingFields = difference(requiredFields, inputFields)
         if (missingFields.length > 0) {
-            throw new Error('Missing fields: ' + missingFields.join(', '))
-        }
 
+            consola.error('Missing fields for ' + input.adSourceId + ': ' + missingFields.join(', '))
+            return false
+        }
+        return true
+    }
+
+    async updateMediationAllocation(inputs: MediationAllocationInput[]): Promise<string[]> {
         const json = await this.fetch('https://apps.admob.com/mediationAllocation/_/rpc/MediationAllocationService/Update?authuser=1&authuser=1&authuser=1&f.sid=2153727026438702600', {
-            1: adUnitIds.map(x => ({
+            1: inputs.filter(this.validateMediationAllocationInput.bind(this)).map(input => ({
                 1: "-1",
-                3: adSourceId,
-                4: adapter.fields.map(x => ({
+                3: input.adSourceId,
+                4: input.adapter.fields.map(x => ({
                     1: x,
-                    2: data[camelCase(x)] // we always use camel
+                    2: input.data[camelCase(x)] // we always use camel
                 })),
-                12: x,
+                12: input.adUnitId,
                 15: "",
-                16: adapter.id,
+                16: input.adapter.id,
             })),
             2: [],
         })
-        /*
-        [
-            {
-                "1": "9952063278640290",
-                "2": true,
-                "3": "395",
-                "4": [
-                    {
-                        "1": "appid",
-                        "2": "1234"
-                    },
-                    {
-                        "1": "placementid",
-                        "2": "1234"
-                    }
-                ],
-                "5": {
-                    "1": {
-                        "1": "-2",
-                        "2": "XXX"
-                    }
-                },
-                "7": false,
-                "9": false,
-                "10": 6,
-                "11": "1711108683809",
-                "12": "8219263534",
-                "15": "",
-                "16": "479"
-            }
-        ]
-        */
-        return json.map((x: any) => (<AllocationPayload>{
-            id: x[1],
-        }))
+        return json.map((x: any) => x[1])
     }
 
     readonly getPageData = cacheFunc(bindSelf(this)._getPageData)

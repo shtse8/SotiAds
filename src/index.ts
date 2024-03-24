@@ -1,11 +1,12 @@
 import consola from 'consola'
-import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload, type AdSourceAdapter } from './apis/admob'
+import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload, type AdSourceAdapter, type CreateAllocationDataInput } from './apis/admob'
 import { chain, groupBy, mapValues, $op, filter, camelCase, pascalCase } from 'xdash'
-import { AdFormat, type Platform } from './base'
+import { AdFormat, type Platform, listChanges } from './base'
 import { getAppConfig, getConfiguredApps } from './read'
 import { FirebaseManager } from './apis/firebase'
 import { getAdmobAuthData, getAuthTokens } from './apis/google'
 import { places } from 'googleapis/build/src/apis/places'
+import { deepEquals } from 'bun'
 
 const authData = await getAdmobAuthData()
 
@@ -127,40 +128,6 @@ function toAdFormat(format: string): AdFormat {
 
 const adSourceData = await admob.getAdSourceData()
 
-function deepEquals(a: any, b: any): b is typeof a {
-    // Check if both are the same reference or both are null/undefined
-    if (a === b) return true;
-    // If either is null/undefined (but not both, as that would have returned true above), return false
-    if (a == null || b == null) return false;
-    // Check if both are objects (including arrays, functions, etc)
-    if (typeof a === 'object' && typeof b === 'object') {
-        // Check if both are instances of the same class
-        if (a.constructor !== b.constructor) return false;
-        // Handle Arrays
-        if (Array.isArray(a)) {
-            // Check array length equality
-            if (a.length !== b.length) return false;
-            // Recursively check each element
-            for (let i = 0; i < a.length; i++) {
-                if (!deepEquals(a[i], b[i])) return false;
-            }
-            return true;
-        }
-        // Handle Objects
-        const aKeys = Object.keys(a);
-        const bKeys = Object.keys(b);
-        // Check if both objects have the same number of keys
-        if (aKeys.length !== bKeys.length) return false;
-        // Check if both objects have the same keys and recursively check values
-        for (const key of aKeys) {
-            if (!b.hasOwnProperty(key) || !deepEquals(a[key], b[key])) return false;
-        }
-        return true;
-    }
-    // If none of the above, values are of different types or not equal
-    return false;
-}
-
 // apply default values
 function defu<T>(source: T, defaults: Partial<T>): T {
     return Object.assign({}, defaults, source)
@@ -227,12 +194,11 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
         return adapter.platform === app.platform && adapter.format == format
     }
 
-    function getAdapter(adSource: AdSource) {
-        return adSourceData[adSource].adapters.find(validAdapter)
-    }
 
+    const config = getAppConfig(app.appId)
     const adSources: AdSourceInput[] = Object.values(adSourceData)
-        .filter(x => x.isBidding && !x.mappingRequired)
+        .filter(x => x.isBidding)
+        .filter(x => !x.mappingRequired || x.id in config.adSources)
         .map(x => (<AdSourceInput>{
             id: x.id,
             adapter: x.adapters.find(validAdapter)
@@ -240,37 +206,37 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
         .filter(x => !!x.adapter)
     consola.info('Found adSources', adSources.length)
 
-    const config = getAppConfig(app.appId)
-    for (const adSource of Object.keys(config.adSources) as AdSource[]) {
-        try {
-            const configBuilder = ConfigMap[adSource]
-            if (!configBuilder) {
-                continue;
-            }
-            const adaptar = getAdapter(adSource)
-            if (!adaptar) {
-                continue;
-            }
+    // const config = getAppConfig(app.appId)
+    // for (const adSource of Object.keys(config.adSources) as AdSource[]) {
+    //     try {
+    //         const configBuilder = ConfigMap[adSource]
+    //         if (!configBuilder) {
+    //             continue;
+    //         }
+    //         const adaptar = getAdapter(adSource)
+    //         if (!adaptar) {
+    //             continue;
+    //         }
 
-            consola.info(`Updating ${adSource} mediation allocation`)
-            const allocations = await admob.updateMediationAllocation(
-                adSource,
-                adUnitIds,
-                adaptar,
-                configBuilder(config, placementId, format)
-            )
-            adSources.push({
-                id: adSource,
-                adapter: adaptar,
-                allocations: allocations,
-            })
-            consola.info(`Added ${adSource} ad source`)
-        } catch (e) {
-            if (e instanceof Error) {
-                consola.fail(`Failed to add ${adSource} to ad sources.`, e.message)
-            }
-        }
-    }
+    //         consola.info(`Updating ${adSource} mediation allocation`)
+    //         const allocations = await admob.updateMediationAllocation(
+    //             adSource,
+    //             adUnitIds,
+    //             adaptar,
+    //             configBuilder(config, placementId, format)
+    //         )
+    //         adSources.push({
+    //             id: adSource,
+    //             adapter: adaptar,
+    //             allocations: allocations,
+    //         })
+    //         consola.info(`Added ${adSource} ad source`)
+    //     } catch (e) {
+    //         if (e instanceof Error) {
+    //             consola.fail(`Failed to add ${adSource} to ad sources.`, e.message)
+    //         }
+    //     }
+    // }
 
 
     const mediationGroupNameParts = <MediationGroupNameParts>{ appId: app.appId, placementId, format }
@@ -280,6 +246,70 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
         deepEquals(parseMediationGroupName(x.name), mediationGroupNameParts)
     )
 
+    function createAllocationData({ input: { id, adapter: { format } } }: CreateAllocationDataInput): Record<string, string> {
+        switch (id) {
+            case AdSource.MetaAudienceNetwork:
+                const adSourceConfig = config.adSources[AdSource.MetaAudienceNetwork]!
+                const placementConfig = adSourceConfig.placements[placementId]?.[format]
+                if (!placementConfig) {
+                    throw new Error(`No config found for ${AdSource.MetaAudienceNetwork} ${placementId} ${format}`)
+                }
+                return {
+                    placementId: placementConfig.placementId
+                }
+            case AdSource.Pangle:
+                const pangleConfig = config.adSources[AdSource.Pangle]
+                if (!pangleConfig) {
+                    throw new Error(`No config found for ${AdSource.Pangle}`)
+                }
+                const panglePlacement = pangleConfig.placements[placementId]?.[format]
+                if (!panglePlacement) {
+                    throw new Error(`No config found for ${AdSource.Pangle} ${placementId} ${format}`)
+                }
+                return {
+                    appid: pangleConfig.appId,
+                    placementid: panglePlacement.placementId
+                }
+            case AdSource.Applovin:
+                const applovinConfig = config.adSources[AdSource.Applovin]
+                if (!applovinConfig) {
+                    throw new Error(`No config found for ${AdSource.Applovin}`)
+                }
+                return {
+                    sdkKey: applovinConfig.sdkKey
+                }
+            case AdSource.Mintegral:
+                const mintegralConfig = config.adSources[AdSource.Mintegral]
+                if (!mintegralConfig) {
+                    throw new Error(`No config found for ${AdSource.Mintegral}`)
+                }
+                const mintegralPlacement = mintegralConfig.placements[placementId]?.[format]
+                if (!mintegralPlacement) {
+                    throw new Error(`No config found for ${AdSource.Mintegral} ${placementId} ${format}`)
+                }
+                return {
+                    appId: mintegralConfig.appId,
+                    appKey: mintegralConfig.appKey,
+                    placementId: mintegralPlacement.placementId,
+                    adUnitId: mintegralPlacement.adUnitId
+                }
+            case AdSource.LiftoffMobile:
+                const liftoffConfig = config.adSources[AdSource.LiftoffMobile]
+                if (!liftoffConfig) {
+                    return
+                }
+                const liftoffPlacement = liftoffConfig.placements[placementId]?.[format]
+                if (!liftoffPlacement) {
+                    return
+                }
+                return {
+                    appid: liftoffConfig.appId,
+                    placementId: liftoffPlacement.placementId
+                }
+            default:
+                throw new Error(`Unknown ad source ${id}`)
+        }
+    }
     if (mediationGroup) {
         consola.info('Updating mediation group', mediationGroup.id)
         await admob.updateMediationGroup(mediationGroup.id, {
@@ -287,7 +317,8 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
             platform: app.platform,
             format: format,
             adUnitIds,
-            adSources: adSources
+            adSources: adSources,
+            createAllocationData,
         })
         consola.success('Updated mediation group')
     } else {
@@ -299,7 +330,8 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
             platform: app.platform,
             format: format,
             adUnitIds,
-            adSources: adSources
+            adSources: adSources,
+            createAllocationData,
         })
         consola.success('Created mediation group')
     }
@@ -314,18 +346,17 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
         return parts.placementId === placementId && parts.format === format
     })
 
-    const { create, update, remove } = sync(
+    const { toAdd, toUpdate, toRemove } = listChanges(
         ecpmFloors,
-        x => x,
         adUnits,
-        x => parseAdUnitName(x.name).ecpmFloor
+        (a, b) => a === parseAdUnitName(b.name).ecpmFloor
     )
     consola.info('Changes for', placementId, format)
-    console.info(' create', create)
-    console.info(' update', [...update.values()].map(x => parseAdUnitName(x.name).ecpmFloor))
-    console.info(' remove', remove)
+    console.info(' create', toAdd)
+    console.info(' update', [...toUpdate.values()].map(x => parseAdUnitName(x.name).ecpmFloor))
+    console.info(' remove', toRemove)
 
-    const resultAdUnits = Object.fromEntries(update.entries()) as Record<number, AdUnit>
+    const resultAdUnits = Object.fromEntries(toUpdate.entries()) as Record<number, AdUnit>
     // if (create.length === 0 && update.length === 0 && remove.length === 0) {
     //     consola.info('No changes')
     // }
@@ -333,7 +364,7 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
     // process changes
 
     // create ad units
-    for (const ecpmFloor of create) {
+    for (const ecpmFloor of toAdd) {
         const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
         consola.info('Creating ad unit', name)
         try {
@@ -360,7 +391,7 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
     }
 
     // update ad units
-    for (const [ecpmFloor, adUnit] of update) {
+    for (const [ecpmFloor, adUnit] of toUpdate) {
         const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
         const needUpdates =
             // name
@@ -392,8 +423,8 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
     }
 
     // remove ad units
-    if (remove.length > 0) {
-        const removeIds = remove.map(x => x.adUnitId)
+    if (toRemove.length > 0) {
+        const removeIds = toRemove.map(x => x.adUnitId)
         consola.info('Removing ad units', removeIds)
         try {
             await admob.bulkRemoveAdUnits(removeIds)
@@ -407,30 +438,6 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
     consola.success('Successfully updated ad units')
 
     return resultAdUnits
-}
-
-interface SyncPayload<S, T, K> {
-    create: S[]
-    update: Map<K, T>
-    remove: T[]
-}
-function sync<S, T, K>(
-    source: S[],
-    getSourceKey: (x: S) => K,
-    target: T[],
-    getTargetKey: (x: T) => K
-): SyncPayload<S, T, K> {
-    const sourceKeys = new Set(source.map(getSourceKey))
-    const targetKeys = new Set(target.map(getTargetKey))
-    const create = source.filter(x => !targetKeys.has(getSourceKey(x)))
-    const update = new Map<K, T>()
-    const remove = target.filter(x => !sourceKeys.has(getTargetKey(x)))
-    for (const x of target) {
-        if (sourceKeys.has(getTargetKey(x))) {
-            update.set(getTargetKey(x), x)
-        }
-    }
-    return { create, update, remove }
 }
 
 for (const app of selectedApps) {
