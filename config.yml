@@ -25,6 +25,8 @@ default:
     - 4
     - 3
     - 2
+    - 1
+    - 0
   placements:
     default:
       interstitial:
