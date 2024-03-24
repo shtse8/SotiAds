@@ -241,13 +241,7 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
     consola.info('Found adSources', adSources.length)
 
     const config = getAppConfig(app.appId)
-    for (const adSource of [
-        AdSource.MetaAudienceNetwork,
-        AdSource.Pangle,
-        AdSource.Applovin,
-        AdSource.Mintegral,
-        AdSource.LiftoffMobile
-    ] as const) {
+    for (const adSource of Object.keys(config.adSources) as AdSource[]) {
         try {
             const configBuilder = ConfigMap[adSource]
             if (!configBuilder) {
