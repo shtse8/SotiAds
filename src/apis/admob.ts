@@ -782,7 +782,6 @@ export class API {
         }
 
         data[5] = adSourcesRequestData
-        console.log(data)
         const json = await this.fetch('https://apps.admob.com/mediationGroup/_/rpc/MediationGroupService/V2Update?authuser=1&authuser=1&authuser=1&f.sid=7739685128981884000', {
             1: data
         })
