@@ -405,7 +405,7 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
             // ecpm floor
             || !deepEquals(adUnit.ecpmFloor, ecpmFloorData)
         if (!needUpdates) {
-            consola.info('No need to update ad unit', adUnit.name)
+            // consola.info('No need to update ad unit', adUnit.name)
             continue
         }
 
