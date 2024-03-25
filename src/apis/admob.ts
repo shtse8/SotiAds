@@ -726,7 +726,7 @@ export class API {
             data[4][3] as string[] ?? []
         )
         consola.info('adUnitsToAdd', adUnitIdsToAdd.length)
-        consola.info('adUnitsToUpdate', adUnitIdsToUpdate.size)
+        consola.info('adUnitsToUpdate', adUnitIdsToUpdate.length)
         consola.info('adUnitsToRemove', adUnitIdsToRemove.length)
         if (adUnitIdsToAdd.length > 0 || adUnitIdsToRemove.length > 0) {
             data[4][3] = adUnitIds
@@ -760,7 +760,7 @@ export class API {
             (a, b) => a.adapter.id === b.adapterId
         )
         consola.info('toAdd', toAdd.map(x => x.id).join(','))
-        consola.info('toKeep', [...toUpdate.keys()].map(x => x.id).join(','))
+        consola.info('toKeep', toUpdate.map(([s, d]) => s.id).join(','))
         const adSourcesRequestData: any[] = []
 
         for (const input of toAdd) {

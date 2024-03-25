@@ -51,7 +51,7 @@ function deepEquals(a: any, b: any): b is typeof a {
 
 export interface listChangesPayload<S, T> {
     toAdd: S[]
-    toUpdate: Map<S, T>
+    toUpdate: [S, T][] // [source, target]
     toRemove: T[]
 }
 export function listChanges<S, T>(
@@ -59,22 +59,51 @@ export function listChanges<S, T>(
     target: T[],
     comparator: (a: S, b: T) => boolean = (a: any, b: any) => a === b
 ): listChangesPayload<S, T> {
-    const toAdd: S[] = []
-    const toUpdate = new Map<S, T>()
-    const toRemove: T[] = []
-    for (const s of source) {
-        const t = target.find(x => comparator(s, x))
-        if (!t) {
-            toAdd.push(s)
-        } else {
-            toUpdate.set(s, t)
+    // Track the count of items from source to be added or updated
+    const sourceCountMap = new Map<S, number>();
+    source.forEach(s => {
+        sourceCountMap.set(s, (sourceCountMap.get(s) || 0) + 1);
+    });
+
+    const toAdd: S[] = [];
+    const toUpdate: [S, T][] = []
+    const toRemove: T[] = [];
+
+    // Track already matched target items to avoid duplicate processing
+    const matchedTargets = new Set<T>();
+
+    target.forEach(t => {
+        let foundMatch = false;
+
+        for (const [s, count] of sourceCountMap) {
+            if (comparator(s, t)) {
+                if (!matchedTargets.has(t)) {
+                    toUpdate.push([s, t]);
+                    matchedTargets.add(t);
+                    foundMatch = true;
+
+                    // Decrease the count for the matched source item
+                    if (count === 1) {
+                        sourceCountMap.delete(s);
+                    } else {
+                        sourceCountMap.set(s, count - 1);
+                    }
+                    break;
+                }
+            }
         }
-    }
-    for (const t of target) {
-        const s = source.find(x => comparator(x, t))
-        if (!s) {
-            toRemove.push(t)
+
+        if (!foundMatch) {
+            toRemove.push(t);
         }
-    }
-    return { toAdd, toUpdate, toRemove }
+    });
+
+    // Remaining source items are to be added
+    sourceCountMap.forEach((count, s) => {
+        for (let i = 0; i < count; i++) {
+            toAdd.push(s);
+        }
+    });
+
+    return { toAdd, toUpdate, toRemove };
 }

@@ -353,10 +353,10 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
     )
     consola.info('Changes for', placementId, format)
     console.info(' create', toAdd)
-    console.info(' update', [...toUpdate.values()].map(x => parseAdUnitName(x.name).ecpmFloor))
+    console.info(' update', toUpdate.map(([s, d]) => parseAdUnitName(d.name).ecpmFloor))
     console.info(' remove', toRemove)
 
-    const resultAdUnits = Object.fromEntries(toUpdate.entries()) as Record<number, AdUnit>
+    const resultAdUnits = Object.fromEntries(toUpdate) as Record<number, AdUnit>
     // if (create.length === 0 && update.length === 0 && remove.length === 0) {
     //     consola.info('No changes')
     // }
