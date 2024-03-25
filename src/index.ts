@@ -1,5 +1,5 @@
 import consola from 'consola'
-import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload, type AdSourceAdapter, type CreateAllocationDataInput } from './apis/admob'
+import { API, AdSourceStatus, type AdSourceInput, type AdUnit, AdSource, type AdmobAppPayload, type AdSourceAdapter, type CreateAllocationDataInput, type EcpmFloor } from './apis/admob'
 import { chain, groupBy, mapValues, $op, filter, camelCase, pascalCase } from 'xdash'
 import { AdFormat, type Platform, listChanges } from './base'
 import { getAppConfig, getConfiguredApps } from './read'
@@ -296,11 +296,11 @@ async function syncMediationGroup(app: AdmobAppPayload, placementId: string, for
             case AdSource.LiftoffMobile:
                 const liftoffConfig = config.adSources[AdSource.LiftoffMobile]
                 if (!liftoffConfig) {
-                    return
+                    throw new Error(`No config found for ${AdSource.LiftoffMobile}`)
                 }
                 const liftoffPlacement = liftoffConfig.placements[placementId]?.[format]
                 if (!liftoffPlacement) {
-                    return
+                    throw new Error(`No config found for ${AdSource.LiftoffMobile} ${placementId} ${format}`)
                 }
                 return {
                     appid: liftoffConfig.appId,
@@ -361,6 +361,15 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
     //     consola.info('No changes')
     // }
 
+    function getEcpmFloorData(value: number): EcpmFloor {
+        return value > 0 ? {
+            mode: 'Manual floor',
+            value: value,
+            currency: 'USD'
+        } : {
+            mode: 'Disabled'
+        }
+    }
     // process changes
 
     // create ad units
@@ -372,11 +381,7 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
                 appId: app.appId!,
                 name,
                 adFormat: parseAdFormat(format),
-                ecpmFloor: {
-                    mode: 'Manual floor',
-                    value: ecpmFloor,
-                    currency: 'USD'
-                }
+                ecpmFloor: getEcpmFloorData(ecpmFloor)
             })
             consola.success('Created ad unit', adUnit.adUnitId)
             resultAdUnits[ecpmFloor] = adUnit
@@ -393,12 +398,12 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
     // update ad units
     for (const [ecpmFloor, adUnit] of toUpdate) {
         const name = stringifyAdUnitName({ placementId, format: format as AdFormat, ecpmFloor })
+        const ecpmFloorData = getEcpmFloorData(ecpmFloor)
         const needUpdates =
             // name
-            adUnit.name !== name ||
+            adUnit.name !== name
             // ecpm floor
-            adUnit.ecpmFloor.mode !== 'Manual floor' ||
-            adUnit.ecpmFloor.value !== ecpmFloor
+            || !deepEquals(adUnit.ecpmFloor, ecpmFloorData)
         if (!needUpdates) {
             consola.info('No need to update ad unit', adUnit.name)
             continue
@@ -408,11 +413,7 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
         try {
             await admob.updateAdUnit(adUnit.appId, adUnit.adUnitId, {
                 name,
-                ecpmFloor: {
-                    mode: 'Manual floor',
-                    value: Number(ecpmFloor),
-                    currency: 'USD'
-                }
+                ecpmFloor: ecpmFloorData
             })
             consola.success('Updated ad unit', adUnit.adUnitId)
         } catch (e) {
