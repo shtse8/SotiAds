@@ -443,35 +443,36 @@ async function syncAdUnits(app: AdmobAppPayload, placementId: string, format: Ad
 
 for (const app of selectedApps) {
     const appConfig = getAppConfig(app.appId!)
-    consola.info('Updating ad units for', app.name)
+    const taggedConsola = consola.withTag(app.appId)
+    taggedConsola.info('Updating ad units for', app.name)
     for (const [placementId, formats] of Object.entries(appConfig.placements || {})) {
         for (const [format, formatConfig] of Object.entries(formats)) {
             const ecpmFloors = formatConfig.ecpmFloors
 
-            consola.info('Syncing ad units', placementId, format)
+            taggedConsola.info('Syncing ad units', placementId, format)
             try {
                 const resultAdUnits = await syncAdUnits(app, placementId, toAdFormat(format), ecpmFloors)
-                consola.success('Synced ad units')
+                taggedConsola.success('Synced ad units')
 
                 // commit changes to remote config
                 const ecpmFloorAdUnits = {} as Record<string, string>
                 for (const [ecpm, adUnit] of Object.entries(resultAdUnits)) {
                     const publicAdUnitId = await admob.getPublicAdUnitId(adUnit.adUnitId)
                     ecpmFloorAdUnits[ecpm] = publicAdUnitId
-                    consola.info(`  ECPM ${ecpm} => ${publicAdUnitId}`)
+                    taggedConsola.info(`  ECPM ${ecpm} => ${publicAdUnitId}`)
                 }
 
                 // update mediation group
-                consola.info('Updating mediation group', placementId, format)
+                taggedConsola.info('Updating mediation group', placementId, format)
                 try {
                     await syncMediationGroup(app, placementId, parseAdFormat(format), Object.values(resultAdUnits).map(x => x.adUnitId))
-                    consola.success('Updated mediation group')
+                    taggedConsola.success('Updated mediation group')
                 } catch (e) {
-                    consola.fail('Failed to update mediation group')
+                    taggedConsola.fail('Failed to update mediation group')
                 }
 
                 // update remote config
-                consola.info('Updating remote config', placementId, format)
+                taggedConsola.info('Updating remote config', placementId, format)
                 await firebaseManager.updateAdUnits({
                     projectId: app.projectId,
                     platform: app.platform,
@@ -479,9 +480,9 @@ for (const app of selectedApps) {
                     format: toAdFormat(format),
                     ecpmFloors: ecpmFloorAdUnits
                 })
-                consola.success('Updated remote config')
+                taggedConsola.success('Updated remote config')
             } catch (e) {
-                consola.fail('Failed to sync ad units', e)
+                taggedConsola.fail('Failed to sync ad units', e)
             }
         }
     }
