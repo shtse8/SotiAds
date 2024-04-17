@@ -1,46 +1,19 @@
 default:
   ecpmFloors:
     - 1000
-    - 900
-    - 800
-    - 700
-    - 600
     - 500
-    - 450
-    - 400
-    - 350
     - 300
-    - 250
-    - 200
-    - 150
     - 100
-    - 90
-    - 80
-    - 70
-    - 60
     - 50
-    - 45
-    - 40
-    - 35
     - 30
-    - 25
-    - 20
-    - 15
     - 10
-    - 9
-    - 8
-    - 7
-    - 6
     - 5
-    - 4
     - 3
-    - 2
     - 1
   placements:
     default:
       interstitial:
       rewarded:
-      rewardedInterstitial:
 
 apps:
   # 2048 Showdown
