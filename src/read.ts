@@ -92,10 +92,10 @@ const configSchema = object({
 let config: Config;
 
 export async function loadConfig(configPath: string): Promise<void> {
-  const configContent = await fs.readFile(path.resolve(process.cwd(), configPath), 'utf-8');
-  const parsedConfig = parseYaml(configContent);
-  config = parse(configSchema, parsedConfig);
-}
+    const configContent = await fs.readFile(path.resolve(process.cwd(), configPath), 'utf-8');
+    const parsedConfig = parseYaml(configContent);
+    config = parsedConfig as Config;
+  }
 
 export function getAppConfig(appId: string): AppConfig {
   if (!config) {
@@ -115,6 +115,13 @@ export function getConfiguredApps(): string[] {
   return Object.keys(config.apps);
 }
 
+export function getConfig(): Config {
+    if (!config) {
+      throw new Error("Config not loaded. Call loadConfig first.");
+    }
+    return config;
+  }
+  
 export function getDefaultEcpmFloors(): number[] {
   if (!config) {
     throw new Error("Config not loaded. Call loadConfig first.");
