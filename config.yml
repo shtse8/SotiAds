@@ -1,59 +1,147 @@
+# Default configuration
 default:
   ecpmFloors:
-    - 1000
-    - 500
-    - 300
-    - 100
-    - 50
-    - 30
-    - 10
-    - 5
-    - 3
-    - 1
-  placements:
-    default:
-      interstitial:
-      rewarded:
+    - 20.0
+    - 15.0
+    - 10.0
+    - 7.5
+    - 5.0
+    - 3.0
+    - 2.0
+    - 1.0
+    - 0.5
+    - 0.1
 
+# App-specific configurations
 apps:
-  123456:
+  # App 1: Puzzle Game
+  ca-app-pub-3940256099942544~3347511713:
+    placements:
+      default:
+        interstitial:
+          ecpmFloors:
+            - 15.0
+            - 10.0
+            - 7.5
+            - 5.0
+            - 2.5
+        rewarded:
+          ecpmFloors:
+            - 20.0
+            - 15.0
+            - 10.0
+            - 7.5
+            - 5.0
     adSources:
       meta:
         placements:
           default:
             interstitial:
-              placementId: 
+              placementId: "IMG_16_9_APP_INSTALL#1234567890"
             rewarded:
-              placementId: 
-            rewardedInterstitial:
-              placementId: 
+              placementId: "VID_HD_9_16_39S_APP_INSTALL#0987654321"
       mintegral:
-        appId:
-        appKey: 
+        appId: "123456"
+        appKey: "abcdef1234567890"
         placements:
           default:
             interstitial:
-              placementId: 
-              adUnitId:
+              placementId: "123456"
+              adUnitId: "789012"
             rewarded:
-              placementId:
-              adUnitId:
-      pangle:
-        appId:
-        placements:
-          default:
-            interstitial:
-              placementId:
-            rewarded:
-              placementId: 
+              placementId: "345678"
+              adUnitId: "901234"
       applovin:
-        sdkKey:
-      liftoff:
-        appId:
+        sdkKey: "abcdefghijklmnopqrstuvwxyz1234567890"
+      unity:
+        gameId: "1234567"
         placements:
           default:
             interstitial:
-              placementId:
+              placementId: "Interstitial_Android"
             rewarded:
-              placementId:
- 
+              placementId: "Rewarded_Android"
+
+  # App 2: Fitness Tracker
+  ca-app-pub-3940256099942544~1458002511:
+    placements:
+      default:
+        banner:
+          ecpmFloors:
+            - 5.0
+            - 3.0
+            - 2.0
+            - 1.0
+            - 0.5
+        interstitial:
+          ecpmFloors:
+            - 10.0
+            - 7.5
+            - 5.0
+            - 3.0
+            - 1.0
+    adSources:
+      meta:
+        placements:
+          default:
+            banner:
+              placementId: "IMG_16_9_LINK#2468101214"
+            interstitial:
+              placementId: "IMG_16_9_LINK#1357902468"
+      adcolony:
+        appId: "app1234567890"
+        placements:
+          default:
+            banner:
+              zoneId: "vz1234567890"
+            interstitial:
+              zoneId: "vz0987654321"
+      ironsource:
+        appKey: "abcdef123"
+
+  # App 3: News Reader
+  ca-app-pub-3940256099942544~2434344595:
+    placements:
+      default:
+        banner:
+          ecpmFloors:
+            - 3.0
+            - 2.0
+            - 1.5
+            - 1.0
+            - 0.5
+        native:
+          ecpmFloors:
+            - 7.0
+            - 5.0
+            - 3.0
+            - 2.0
+            - 1.0
+    adSources:
+      meta:
+        placements:
+          default:
+            banner:
+              placementId: "IMG_16_9_LINK#1122334455"
+            native:
+              placementId: "NATIVE_BANNER_16_9#5544332211"
+      mintegral:
+        appId: "654321"
+        appKey: "zyxwvu9876543210"
+        placements:
+          default:
+            banner:
+              placementId: "654321"
+              adUnitId: "111222"
+            native:
+              placementId: "765432"
+              adUnitId: "333444"
+
+# Global ad network configurations (if needed)
+globalAdNetworks:
+  admob:
+    appId: "ca-app-pub-3940256099942544~3347511713"
+  adcolony:
+    appId: "app0987654321"
+  ironsource:
+    appKey: "123456789"

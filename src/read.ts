@@ -1,113 +1,130 @@
 import { parse as parseYaml } from "yaml";
-import type { AdFormat } from "./base";
+import { AdFormat, Platform } from "./base";
 import {
-    parse, optional, string, object, picklist, record, transform,
-    fallback,
-    type BaseSchema, type Input, number, coerce, array, partial, type ObjectSchema, type Pipe, type RecordOutput, type StringSchema, toCustom, forward, custom, type Output
-} from 'valibot';
-import { camelCase, mapKeys, mapValues, pascalCase } from 'xdash';
-import { AdSource } from "./apis/admob";
+  parse,
+  object,
+  string,
+  number,
+  array,
+  record,
+  union,
+  optional,
+  literal,
+} from "valibot";
+import fs from "fs/promises";
+import path from "path";
 
-const file = Bun.file("config.yml");
-const content = await file.text();
-const data = parseYaml(content);
-// print deep
-
-const defaultConfig = data.default;
-// merge default placements formats ecpm
-for (const placement of Object.values(defaultConfig.placements) as any[]) {
-    for (const formatId in placement) {
-        const format = placement[formatId] ||= {};
-        format.ecpmFloors ||= defaultConfig.ecpmFloors;
-    }
-}
-const adFormatSchema = transform(
-    picklist([
-        'interstitial',
-        'rewarded',
-        'banner',
-        'rewardedInterstitial',
-        'appOpen',
-        'native'
-    ]), x => pascalCase(x) as AdFormat);
-
-const placementSchema = string();
-function placementsSchema<S extends ObjectSchema<any, any>>(adSourceConfigSchema: S, pipe?: Pipe<RecordOutput<StringSchema, S>>) {
-    return record(
-        placementSchema,
-        record(
-            adFormatSchema,
-            adSourceConfigSchema,
-        ),
-        pipe
-    )
+export interface AdSourceConfig {
+  placements: Record<string, Record<AdFormat, { placementId: string; adUnitId?: string }>>;
+  appId?: string;
+  appKey?: string;
+  sdkKey?: string;
+  gameId?: string;
+  zoneId?: string;
 }
 
-const metaAdSourceConfigSchema = object({
-    placements: placementsSchema(object({
-        placementId: string()
+export interface PlacementConfig {
+  ecpmFloors: number[];
+}
+
+export interface AppConfig {
+  placements: Record<string, Record<AdFormat, PlacementConfig>>;
+  adSources: Record<string, AdSourceConfig>;
+}
+
+export interface GlobalAdNetworkConfig {
+  appId?: string;
+  appKey?: string;
+}
+
+export interface Config {
+  default: {
+    ecpmFloors: number[];
+  };
+  apps: Record<string, AppConfig>;
+  globalAdNetworks?: Record<string, GlobalAdNetworkConfig>;
+}
+
+const adFormatSchema = union([
+  literal("banner"),
+  literal("interstitial"),
+  literal("rewarded"),
+  literal("native"),
+]);
+
+const placementConfigSchema = object({
+  ecpmFloors: array(number()),
+});
+
+const adSourceConfigSchema = object({
+  placements: record(
+    string(),
+    record(adFormatSchema, object({ 
+      placementId: string(),
+      adUnitId: optional(string()),
     }))
-})
-
-const mintegralAdSourceConfigSchema = object({
-    appKey: string(),
-    appId: string(),
-    placements: placementsSchema(object({
-        placementId: string(),
-        adUnitId: string(),
-    }))
-})
-
-const pangleAdSourceConfigSchema = object({
-    appId: string(),
-    placements: placementsSchema(object({
-        placementId: string()
-    }))
-})
-
-
-const applovinAdSourceConfigSchema = object({
-    sdkKey: string(),
-})
-
-const liftoffAdSourceConfigSchema = object({
-    appId: string(),
-    placements: placementsSchema(object({
-        placementId: string()
-    }))
-})
+  ),
+  appId: optional(string()),
+  appKey: optional(string()),
+  sdkKey: optional(string()),
+  gameId: optional(string()),
+  zoneId: optional(string()),
+});
 
 const appConfigSchema = object({
-    placements: optional(placementsSchema(object({
-        ecpmFloors: array(number())
-    })), defaultConfig.placements),
-    adSources: transform(partial(object({
-        meta: metaAdSourceConfigSchema,
-        mintegral: mintegralAdSourceConfigSchema,
-        pangle: pangleAdSourceConfigSchema,
-        applovin: applovinAdSourceConfigSchema,
-        liftoff: liftoffAdSourceConfigSchema
-    })), x => ({
-        [AdSource.MetaAudienceNetwork]: x.meta,
-        [AdSource.Mintegral]: x.mintegral,
-        [AdSource.Pangle]: x.pangle,
-        [AdSource.Applovin]: x.applovin,
-        [AdSource.LiftoffMobile]: x.liftoff
-    })),
-})
+  placements: record(string(), record(adFormatSchema, placementConfigSchema)),
+  adSources: record(string(), adSourceConfigSchema),
+});
 
-export function getAppConfig(appId: string) {
-    if (!(appId in data.apps)) {
-        throw new Error(`App with id ${appId} not found`);
-    }
-    return parse(appConfigSchema, data.apps[appId] ||= {});
+const globalAdNetworkConfigSchema = object({
+  appId: optional(string()),
+  appKey: optional(string()),
+});
+
+const configSchema = object({
+  default: object({
+    ecpmFloors: array(number()),
+  }),
+  apps: record(string(), appConfigSchema),
+  globalAdNetworks: optional(record(string(), globalAdNetworkConfigSchema)),
+});
+
+let config: Config;
+
+export async function loadConfig(configPath: string): Promise<void> {
+  const configContent = await fs.readFile(path.resolve(process.cwd(), configPath), 'utf-8');
+  const parsedConfig = parseYaml(configContent);
+  config = parse(configSchema, parsedConfig);
 }
 
-// const config = getAppConfig("6975353685");
-// config.adSources[AdSource.Pangle]?.placements['default'].Interstitial?.placementId
+export function getAppConfig(appId: string): AppConfig {
+  if (!config) {
+    throw new Error("Config not loaded. Call loadConfig first.");
+  }
+  const appConfig = config.apps[appId];
+  if (!appConfig) {
+    throw new Error(`App with id ${appId} not found in config.`);
+  }
+  return appConfig;
+}
 
-// console.dir(config, { depth: null });
+export function getConfiguredApps(): string[] {
+  if (!config) {
+    throw new Error("Config not loaded. Call loadConfig first.");
+  }
+  return Object.keys(config.apps);
+}
 
-export function getConfiguredApps() {
-    return Object.keys(data.apps);
+export function getDefaultEcpmFloors(): number[] {
+  if (!config) {
+    throw new Error("Config not loaded. Call loadConfig first.");
+  }
+  return config.default.ecpmFloors;
+}
+
+export function getGlobalAdNetworkConfig(network: string): GlobalAdNetworkConfig | undefined {
+  if (!config) {
+    throw new Error("Config not loaded. Call loadConfig first.");
+  }
+  return config.globalAdNetworks?.[network];
 }
