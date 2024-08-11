@@ -1,5 +1,5 @@
 {
-  "name": "admob-stratosphere",
+  "name": "sotiads",
   "version": "1.0.0",
   "description": "Boost AdMob revenue with automated multi-floor eCPM management and Firebase sync",
   "main": "dist/index.js",
@@ -22,11 +22,11 @@
     "revenue-boost",
     "adtech"
   ],
-  "author": "Your Name",
+  "author": "shtse8",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/admob-stratosphere.git"
+    "url": "https://github.com/shtse8/sotiads.git"
   },
   "dependencies": {
     "commander": "^12.0.0",
