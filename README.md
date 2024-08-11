@@ -1,6 +1,6 @@
-# AdMob Stratosphere
+# SotiAds
 
-AdMob Stratosphere is an advanced tool that automates the creation and management of AdMob ad units and mediation groups, synchronizing them with Firebase Remote Config. By implementing multiple eCPM floor techniques, it aims to significantly boost ad revenue.
+**SotiAds** is an advanced tool that automates the creation and management of AdMob ad units and mediation groups, synchronizing them with Firebase Remote Config. By implementing multiple eCPM floor techniques, it aims to significantly boost ad revenue.
 
 ## Key Features
 
@@ -31,7 +31,7 @@ In a first-price auction, the winning bidder pays exactly what they bid. eCPM fl
 
 ### Multiple eCPM Floors Strategy
 
-AdMob Stratosphere implements a multiple eCPM floors strategy, which can boost revenue by:
+**SotiAds** implements a multiple eCPM floors strategy, which can boost revenue by:
 
 1. **Capturing High-Value Opportunities**: Higher floors capture high-value impressions when demand is strong.
 2. **Maintaining Fill Rates**: Lower floors ensure a baseline fill rate, maintaining overall revenue.
@@ -40,7 +40,7 @@ AdMob Stratosphere implements a multiple eCPM floors strategy, which can boost r
 
 ## Implementation Strategy for Developers
 
-To maximize the benefits of AdMob Stratosphere's multiple eCPM floors, consider the following implementation strategy:
+To maximize the benefits of **SotiAds**'s multiple eCPM floors, consider the following implementation strategy:
 
 1. **Prioritized Loading**:
    - Start by attempting to load ads with the highest eCPM floor.
@@ -81,11 +81,11 @@ To maximize the benefits of AdMob Stratosphere's multiple eCPM floors, consider 
    - Lower floors for new users or less engaged segments.
 
 5. **Waterfall Optimization**:
-   - Use AdMob Stratosphere to create a waterfall of ad networks.
+   - Use **SotiAds** to create a waterfall of ad networks.
    - Order networks by historical eCPM performance.
    - Adjust waterfall based on real-time performance data.
 
-By implementing these strategies, you can maximize the effectiveness of the multiple eCPM floors created by AdMob Stratosphere, potentially leading to significant revenue increases.
+By implementing these strategies, you can maximize the effectiveness of the multiple eCPM floors created by **SotiAds**, potentially leading to significant revenue increases.
 
 ## Revenue Improvement Potential
 
@@ -109,8 +109,8 @@ Note: These figures are general industry observations and not guaranteed results
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/admob-stratosphere.git
-   cd admob-stratosphere
+   git clone https://github.com/yourusername/sotiads.git
+   cd sotiads
    ```
 
 2. Install dependencies:
@@ -178,7 +178,7 @@ Adjust the `ecpmFloors` values and add all relevant ad sources for each app.
 
 ## Usage
 
-AdMob Stratosphere supports two main actions: `sync` and `list`.
+**SotiAds** supports two main actions: `sync` and `list`.
 
 ### Listing available apps
 
@@ -236,12 +236,12 @@ bun run index.ts sync <app-id>
 
 ## Security Note
 
-AdMob Stratosphere requires authentication with your AdMob and Firebase accounts. Ensure that you keep your authentication tokens and configuration files secure and never share them publicly.
+**SotiAds** requires authentication with your AdMob and Firebase accounts. Ensure that you keep your authentication tokens and configuration files secure and never share them publicly.
 
 ## Contributing
 
-Contributions to AdMob Stratosphere are welcome! Please feel free to submit a Pull Request.
+Contributions to **SotiAds** are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-AdMob Stratosphere is licensed under the MIT License.
+**SotiAds** is licensed under the MIT License.
