@@ -1,7 +1,7 @@
 # SotiAds
 
 <p align="center">
-  <img src="https://mark.sylphx.com/api/v1/mark/hero?type=void&theme=tokyonight&text=SotiAds&desc=SotiAds+automates+AdMob+ad+unit+creation+and+mediation+management%2C+optimizing+ad+revenue+with%E2%80%A6&height=200&animation=rise" alt="SotiAds — Sylphx Mark banner" width="100%" />
+  <img src="https://mark.sylphx.com/api/v1/mark/hero.svg?type=waving&theme=dark&text=SotiAds&desc=Automate%20AdMob%20ad%20units%20and%20mediation" alt="SotiAds" width="100%" />
 </p>
 
 **SotiAds** is an advanced tool that automates the creation and management of AdMob ad units and mediation groups, synchronizing them with Firebase Remote Config. By implementing multiple eCPM floor techniques, it aims to significantly boost ad revenue.
